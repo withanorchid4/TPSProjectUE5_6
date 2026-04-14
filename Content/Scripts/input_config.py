@@ -43,6 +43,9 @@ class InputConfig:
         {"ActionName": "Jump", "Key": "SpaceBar"},
         {"ActionName": "Fire", "Key": "LeftMouseButton"},
         {"ActionName": "Aim", "Key": "RightMouseButton"},
+        {"ActionName": "Sprint", "Key": "LeftShift"},
+        {"ActionName": "ToggleFireMode", "Key": "C"},
+        {"ActionName": "SwitchWeapon", "Key": "E"},
     ]
     
     @classmethod

@@ -19,6 +19,15 @@ def on_init():
         import traceback
         traceback.print_exc()
     
+    # 注册 Bullet 类（用于射击）
+    try:
+        from character import Bullet
+        ue.LogWarning('Bullet class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load Bullet: {e}')
+        import traceback
+        traceback.print_exc()
+    
     if ue.GIsEditor:
         # 编辑器模式：启动热重载监控
         try:

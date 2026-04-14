@@ -6,6 +6,7 @@ from .movement import MovementComponent
 from .camera import CameraComponent
 from .shooting import ShootingComponent
 from .input_handler import InputHandler
+from .bullet import Bullet
 
 __all__ = [
     'BaseCharacter',
@@ -13,4 +14,5 @@ __all__ = [
     'CameraComponent',
     'ShootingComponent',
     'InputHandler',
+    'Bullet',
 ]

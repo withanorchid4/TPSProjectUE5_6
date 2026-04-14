@@ -23,12 +23,23 @@ class BaseCharacter(ue.Character):
         self.shooting = None
         self.input_handler = None
     
+    @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
         """角色开始播放时调用"""
         ue.Log(f"{self} ReceiveBeginPlay")
         
         # 初始化组件
         self._init_components()
+        
+        # 初始化武器状态
+        self._is_weapon_drawn = False
+        self._b_switch_weapon = False
+        self._switch_weapon_speed = 1.0
+        self._pending_has_weapon = None  # 下一帧更新 bHasWeapon 的缓存
+        self._weapon_hide_timer = 0.0   # 收枪延迟隐藏计时器
+        
+        # 挂载武器网格
+        self._setup_weapon_mesh()
     
     def _init_components(self):
         """初始化所有组件"""
@@ -66,6 +77,135 @@ class BaseCharacter(ue.Character):
         if self.shooting:
             self.shooting.set_bullet_class(bullet_class)
     
+    @ue.ufunction(override=True)
+    def ReceiveTick(self, delta_time: float):
+        """
+        每帧更新
+        
+        Args:
+            delta_time: 帧间隔时间
+        """
+        # 更新摄像机组件（平滑过渡）
+        if self.camera:
+            self.camera.tick(delta_time)
+        
+        # 更新输入处理器（移动、射击等）
+        if self.input_handler:
+            self.input_handler.tick(delta_time)
+        
+        # 推送武器切换状态到动画蓝图
+        self._update_weapon_anim_state()
+        
+        # 收枪延迟隐藏计时
+        if self._weapon_hide_timer > 0.0:
+            self._weapon_hide_timer -= delta_time
+            if self._weapon_hide_timer <= 0.0:
+                self._weapon_hide_timer = 0.0
+                if hasattr(self, '_weapon_mesh') and self._weapon_mesh:
+                    self._weapon_mesh.SetVisibility(False)
+    
+    def switch_weapon(self):
+        """切换持枪/收枪状态（E键调用）"""
+        # 基于切换前的状态设置动画速度
+        if self._is_weapon_drawn:
+            self._switch_weapon_speed = -1.0  # 持枪→收枪
+        else:
+            self._switch_weapon_speed = 1.0   # 收枪→持枪
+        
+        # 切换持枪状态
+        self._is_weapon_drawn = not self._is_weapon_drawn
+        
+        # 触发切换脉冲
+        self._b_switch_weapon = True
+        
+        # 缓存：下一帧再更新 bHasWeapon
+        self._pending_has_weapon = self._is_weapon_drawn
+        
+        # 切换武器可见性
+        if hasattr(self, '_weapon_mesh') and self._weapon_mesh:
+            if self._is_weapon_drawn:
+                # 拿枪：立即显示
+                self._weapon_mesh.SetVisibility(True)
+            else:
+                # 收枪：延迟0.8s后隐藏
+                self._weapon_hide_timer = 1.8
+        
+        state = "持枪" if self._is_weapon_drawn else "收枪"
+        ue.Log(f"BaseCharacter: 切换武器 → {state}, Speed={self._switch_weapon_speed}")
+    
+    def _update_weapon_anim_state(self):
+        """将武器状态推送到动画蓝图变量"""
+        mesh = self.GetMesh()
+        if not mesh:
+            return
+        
+        anim_instance = mesh.GetAnimInstance()
+        if not anim_instance:
+            return
+        
+        try:
+            anim_instance.bSwitchWeapon = self._b_switch_weapon
+            anim_instance.SwitchWeaponSpeed = self._switch_weapon_speed
+        except Exception as e:
+            ue.LogWarning(f"BaseCharacter: Failed to set AnimBP vars: {e}")
+        
+        # 下一帧：更新 bHasWeapon
+        if self._pending_has_weapon is not None:
+            try:
+                anim_instance.bHasWeapon = self._pending_has_weapon
+            except Exception as e:
+                ue.LogWarning(f"BaseCharacter: Failed to set bHasWeapon: {e}")
+            self._pending_has_weapon = None
+        
+        # bSwitchWeapon 仅保持一帧，之后重置
+        if self._b_switch_weapon:
+            self._b_switch_weapon = False
+    
+    def _setup_weapon_mesh(self):
+        """查找或创建武器网格"""
+        # 优先从蓝图找已添加的 WeaponMesh 组件
+        self._weapon_mesh = None
+        for comp in self.GetComponentsByClass(ue.StaticMeshComponent):
+            if comp.GetName() == "WeaponMesh":
+                self._weapon_mesh = comp
+                break
+        
+        if self._weapon_mesh:
+            self._weapon_mesh.SetVisibility(False)
+            ue.Log("BaseCharacter: Found existing WeaponMesh component")
+            return
+        
+        # 蓝图中没有则运行时创建
+        mesh = self.GetMesh()
+        if not mesh:
+            ue.LogWarning("BaseCharacter: No mesh, cannot attach weapon")
+            return
+        
+        self._weapon_mesh = ue.NewObject(ue.StaticMeshComponent, self, "WeaponMesh")
+        self._weapon_mesh.RegisterComponent()
+        
+        rifle_mesh = ue.LoadObject(ue.StaticMesh, "/Game/Weapons/Meshes/AR4/SM_AR4.SM_AR4")
+        if rifle_mesh:
+            self._weapon_mesh.SetStaticMesh(rifle_mesh)
+        else:
+            ue.LogWarning("BaseCharacter: AR4 mesh not found at /Game/Weapons/Meshes/AR4/SM_AR4")
+        
+        self._weapon_mesh.AttachToComponent(
+            mesh,
+            ue.Name("hand_r"),
+            ue.EAttachmentRule.KeepRelative,
+            ue.EAttachmentRule.KeepRelative,
+            ue.EAttachmentRule.KeepRelative,
+            False
+        )
+        # 枪口朝向修正：旋转90°使枪指向前方
+        self._weapon_mesh.SetRelativeRotation(
+            ue.Rotator(0.0, 90.0, 0.0), False
+        )
+        self._weapon_mesh.SetVisibility(False)
+        ue.Log("BaseCharacter: Weapon mesh created and attached to hand_r")
+    
+    @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
         if self.input_handler:
