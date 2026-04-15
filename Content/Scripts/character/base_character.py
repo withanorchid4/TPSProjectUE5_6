@@ -5,10 +5,13 @@ import ue
 from .movement import MovementComponent
 from .camera import CameraComponent
 from .shooting import ShootingComponent
+from system.health_component import HealthComponent
 
 
 @ue.uclass()
 class BaseCharacter(ue.Character):
+    
+    DEFAULT_MAX_HP = 100.0
     """
     角色基类，使用组件组合模式
     
@@ -22,6 +25,9 @@ class BaseCharacter(ue.Character):
         self.camera = None
         self.shooting = None
         self.input_handler = None
+        self.health = None
+        # 受击脉冲（延迟一帧还原）
+        self._pending_hit_reset = False
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -43,6 +49,11 @@ class BaseCharacter(ue.Character):
     
     def _init_components(self):
         """初始化所有组件"""
+        # 创建血量组件
+        self.health = HealthComponent(self, self.DEFAULT_MAX_HP)
+        self.health.on_death = self._on_death
+        self.health.on_damage = self._on_damage
+        
         # 创建移动组件
         self.movement = MovementComponent(self)
         
@@ -77,6 +88,28 @@ class BaseCharacter(ue.Character):
         if self.shooting:
             self.shooting.set_bullet_class(bullet_class)
     
+    def take_damage(self, amount: float, attacker=None):
+        """受到伤害"""
+        if self.health and not self.health.is_dead():
+            self.health.take_damage(amount, attacker)
+    
+    def _on_damage(self, amount: float, attacker=None):
+        """受伤回调 — 推送 bIsHit 脉冲"""
+        mesh = self.GetMesh()
+        if mesh:
+            anim = mesh.GetAnimInstance()
+            if anim:
+                anim.bIsHit = True
+        ue.Log(f"BaseCharacter: took {amount} damage, HP={self.health.current_hp:.0f}")
+    
+    def _on_death(self):
+        """死亡回调"""
+        ue.LogWarning(f"BaseCharacter: {self} died!")
+        # 禁用输入
+        if self.input_handler:
+            self.input_handler.unbind()
+        self.SetActorEnableCollision(False)
+    
     @ue.ufunction(override=True)
     def ReceiveTick(self, delta_time: float):
         """
@@ -95,6 +128,17 @@ class BaseCharacter(ue.Character):
         
         # 推送武器切换状态到动画蓝图
         self._update_weapon_anim_state()
+        
+        # 下一帧还原 bIsHit（延迟一帧，确保 AnimBP 能读到 True）
+        mesh = self.GetMesh()
+        if mesh:
+            anim = mesh.GetAnimInstance()
+            if anim:
+                if self._pending_hit_reset:
+                    anim.bIsHit = False
+                    self._pending_hit_reset = False
+                elif anim.bIsHit:
+                    self._pending_hit_reset = True
         
         # 收枪延迟隐藏计时
         if self._weapon_hide_timer > 0.0:

@@ -13,7 +13,7 @@ class CameraComponent:
     DEFAULT_ROTATION_SPEED = 2.0
     
     # 瞄准模式参数
-    AIM_ARM_LENGTH = 100.0
+    AIM_ARM_LENGTH = 50.0
     AIM_SOCKET_OFFSET = (30.0, 80.0)  # Y, Z 偏移（瞄准时更靠近角色）
     
     def __init__(self, owner):
@@ -55,7 +55,7 @@ class CameraComponent:
         )
         self.spring_arm.bUsePawnControlRotation = True
         self.spring_arm.bEnableCameraLag = True
-        self.spring_arm.CameraLagSpeed = 3.0
+        self.spring_arm.CameraLagSpeed = 6.0
         
         # 查找现有的 Camera 组件
         self.camera = self.owner.GetComponentByClass(ue.CameraComponent)
@@ -112,6 +112,11 @@ class CameraComponent:
             # 开镜时：角色转向摄像机方向
             self._rotate_character_to_camera()
             
+            # 开镜时限制移动速度
+            movement = self.owner.CharacterMovement
+            if movement:
+                movement.MaxWalkSpeed = 300.0
+            
             # 更新动画蓝图的瞄准变量
             self._set_anim_aiming(True)
             
@@ -124,6 +129,12 @@ class CameraComponent:
                 self.DEFAULT_SOCKET_OFFSET[0],
                 self.DEFAULT_SOCKET_OFFSET[1]
             )
+            
+            # 恢复移动速度
+            movement = self.owner.CharacterMovement
+            if movement:
+                walk_speed = self.owner.movement.WALK_SPEED if self.owner.movement else 300.0
+                movement.MaxWalkSpeed = walk_speed
             
             # 更新动画蓝图的瞄准变量
             self._set_anim_aiming(False)
@@ -163,7 +174,7 @@ class CameraComponent:
         
         # 设置动画蓝图中的 bIsAiming 变量
         # 变量名需要和动画蓝图中的变量名一致
-        anim_instance.SetBoolParameter(ue.Name("bIsAiming"), is_aiming)
+        anim_instance.bIsAiming = is_aiming
     
     def is_aiming(self) -> bool:
         """检查是否正在瞄准"""

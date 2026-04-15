@@ -144,6 +144,7 @@ class ShootingComponent:
         )
         
         if bullet:
+            bullet.SetOwner(self.owner)
             self.last_fire_time = self._get_current_time()
             ue.Log(f"ShootingComponent: Shot fired (aiming={is_aiming})")
             return True
@@ -154,3 +155,27 @@ class ShootingComponent:
     def is_firing(self) -> bool:
         """检查是否正在射击"""
         return self._is_firing
+    
+    def fire_magic_arrow(self):
+        """发射魔法箭"""
+        from character.magic_arrow import MagicArrow
+        
+        controller = self.owner.GetController()
+        if not controller:
+            return
+        
+        # 使用摄像机方向
+        fire_rotation = controller.GetControlRotation()
+        actor_location = self.owner.GetActorLocation()
+        
+        forward = ue.KismetMathLibrary.GetForwardVector(fire_rotation)
+        spawn_location = actor_location + forward * 100.0
+        
+        world = self.owner.GetWorld()
+        arrow = world.SpawnActor(MagicArrow, spawn_location, fire_rotation)
+        
+        if arrow:
+            arrow.SetOwner(self.owner)
+            ue.LogWarning("ShootingComponent: Magic arrow fired!")
+        else:
+            ue.LogWarning("ShootingComponent: Failed to spawn magic arrow!")

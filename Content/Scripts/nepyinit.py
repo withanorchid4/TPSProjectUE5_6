@@ -28,6 +28,24 @@ def on_init():
         import traceback
         traceback.print_exc()
     
+    # 注册 MagicArrow 类
+    try:
+        from character import MagicArrow
+        ue.LogWarning('MagicArrow class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load MagicArrow: {e}')
+        import traceback
+        traceback.print_exc()
+    
+    # 注册敌人类
+    try:
+        from enemy import BaseEnemy, MeleeEnemy, RangedEnemy, EnemyProjectile
+        ue.LogWarning('Enemy classes loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load enemy classes: {e}')
+        import traceback
+        traceback.print_exc()
+    
     if ue.GIsEditor:
         # 编辑器模式：启动热重载监控
         try:

@@ -61,6 +61,7 @@ class KeyboardInputHandler(InputHandler):
         input_comp.BindAction("Sprint", ue.EInputEvent.IE_Released, self._on_sprint_stop)
         input_comp.BindAction("ToggleFireMode", ue.EInputEvent.IE_Pressed, self._on_toggle_fire_mode)
         input_comp.BindAction("SwitchWeapon", ue.EInputEvent.IE_Pressed, self._on_switch_weapon)
+        input_comp.BindAction("MagicArrow", ue.EInputEvent.IE_Pressed, self._on_magic_arrow)
         
         ue.LogWarning("KeyboardInputHandler: Input bindings complete!")
     
@@ -163,3 +164,8 @@ class KeyboardInputHandler(InputHandler):
     def _on_switch_weapon(self):
         """切换持枪/收枪回调"""
         self.owner.switch_weapon()
+    
+    def _on_magic_arrow(self):
+        """发射魔法箭"""
+        if self.shooting:
+            self.shooting.fire_magic_arrow()

@@ -46,6 +46,7 @@ class InputConfig:
         {"ActionName": "Sprint", "Key": "LeftShift"},
         {"ActionName": "ToggleFireMode", "Key": "C"},
         {"ActionName": "SwitchWeapon", "Key": "E"},
+        {"ActionName": "MagicArrow", "Key": "Q"},
     ]
     
     @classmethod

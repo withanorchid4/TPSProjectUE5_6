@@ -7,6 +7,7 @@ from .camera import CameraComponent
 from .shooting import ShootingComponent
 from .input_handler import InputHandler
 from .bullet import Bullet
+from .magic_arrow import MagicArrow
 
 __all__ = [
     'BaseCharacter',
@@ -15,4 +16,5 @@ __all__ = [
     'ShootingComponent',
     'InputHandler',
     'Bullet',
+    'MagicArrow',
 ]
