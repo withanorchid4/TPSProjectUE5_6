@@ -28,6 +28,8 @@ class BaseCharacter(ue.Character):
         self.health = None
         # 受击脉冲（延迟一帧还原）
         self._pending_hit_reset = False
+        # 换弹脉冲（延迟一帧还原）
+        self._pending_reload_reset = False
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -139,6 +141,13 @@ class BaseCharacter(ue.Character):
                     self._pending_hit_reset = False
                 elif anim.bIsHit:
                     self._pending_hit_reset = True
+                
+                # 还原 bIsReloading（延迟一帧，确保 AnimBP 能读到 True）
+                if self._pending_reload_reset:
+                    anim.bIsReloading = False
+                    self._pending_reload_reset = False
+                elif anim.bIsReloading:
+                    self._pending_reload_reset = True
         
         # 收枪延迟隐藏计时
         if self._weapon_hide_timer > 0.0:

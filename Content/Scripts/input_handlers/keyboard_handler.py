@@ -62,6 +62,7 @@ class KeyboardInputHandler(InputHandler):
         input_comp.BindAction("ToggleFireMode", ue.EInputEvent.IE_Pressed, self._on_toggle_fire_mode)
         input_comp.BindAction("SwitchWeapon", ue.EInputEvent.IE_Pressed, self._on_switch_weapon)
         input_comp.BindAction("MagicArrow", ue.EInputEvent.IE_Pressed, self._on_magic_arrow)
+        input_comp.BindAction("Reload", ue.EInputEvent.IE_Pressed, self._on_reload)
         
         ue.LogWarning("KeyboardInputHandler: Input bindings complete!")
     
@@ -95,9 +96,9 @@ class KeyboardInputHandler(InputHandler):
             if self._look_up_rate != 0.0:
                 self.camera.update_rotation(0.0, self._look_up_rate)
         
-        # 处理射击（仅连射模式在tick中持续射击）
-        if self._is_firing and self.shooting and self.shooting.is_auto_mode():
-            self.shooting.shoot()
+        # 更新射击组件（连射 + 换弹计时）
+        if self.shooting:
+            self.shooting.tick(delta_time)
     
     # === Axis 回调 ===
     
@@ -169,3 +170,8 @@ class KeyboardInputHandler(InputHandler):
         """发射魔法箭"""
         if self.shooting:
             self.shooting.fire_magic_arrow()
+    
+    def _on_reload(self):
+        """手动换弹"""
+        if self.shooting:
+            self.shooting.start_reload()

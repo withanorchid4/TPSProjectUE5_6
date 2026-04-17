@@ -46,6 +46,24 @@ def on_init():
         import traceback
         traceback.print_exc()
     
+    # 注册准星 HUD 类
+    try:
+        from system.crosshair_hud import CrosshairHUD
+        ue.LogWarning('CrosshairHUD class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load CrosshairHUD: {e}')
+        import traceback
+        traceback.print_exc()
+    
+    # 注册拾取道具类
+    try:
+        from pickup import PickupItem
+        ue.LogWarning('PickupItem class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load PickupItem: {e}')
+        import traceback
+        traceback.print_exc()
+    
     if ue.GIsEditor:
         # 编辑器模式：启动热重载监控
         try:

@@ -123,6 +123,7 @@ class Bullet(ue.Actor):
         self.projectile_movement.MaxSpeed = self.BULLET_SPEED
         self.projectile_movement.bRotationFollowsVelocity = True
         self.projectile_movement.bShouldBounce = False
+        self.projectile_movement.ProjectileGravityScale = 0.0
         
         forward = ue.KismetMathLibrary.GetForwardVector(self.GetActorRotation())
         self.projectile_movement.Velocity = forward * self.BULLET_SPEED
@@ -137,12 +138,14 @@ class Bullet(ue.Actor):
         if other_actor == owner:
             return
         
-        ue.LogWarning(f"Bullet: Overlapped with {other_actor}")
+        # 只处理有 take_damage 的目标（敌人/玩家），跳过拾取物等
+        if not hasattr(other_actor, 'take_damage'):
+            return
         
-        if hasattr(other_actor, 'take_damage'):
-            other_actor.take_damage(self.BULLET_DAMAGE, None)
-            ue.LogWarning(f"Bullet: Hit {other_actor} for {self.BULLET_DAMAGE} damage")
-            self.Destroy()
+        ue.LogWarning(f"Bullet: Overlapped with {other_actor}")
+        other_actor.take_damage(self.BULLET_DAMAGE, None)
+        ue.LogWarning(f"Bullet: Hit {other_actor} for {self.BULLET_DAMAGE} damage")
+        self.Destroy()
     
     def _on_hit(self, self_actor, other_actor, normal_impulse, hit_result):
         """Hit 回调 — 碰到墙壁等静态物体时销毁"""

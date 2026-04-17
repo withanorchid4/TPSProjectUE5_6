@@ -17,7 +17,7 @@ class BaseEnemy(ue.Character):
     """
     
     DEFAULT_MAX_HP = 100.0
-    DEATH_DESTROY_DELAY = 2.0
+    DEATH_MONTAGE_PATH = "/Game/Characters/Mannequins/Anims/Death/MM_Death_Front_03_Montage.MM_Death_Front_03_Montage"
     
     def __init_pyobj__(self):
         self.health = None
@@ -73,7 +73,27 @@ class BaseEnemy(ue.Character):
         """死亡回调"""
         self.ai.set_dead()
         self.SetActorEnableCollision(False)
-        self._death_timer = self.DEATH_DESTROY_DELAY
+        self._death_timer = 1.0  # 默认销毁时间，Montage播放成功后会覆盖
+        
+        # 播放死亡 Montage
+        mesh = self.GetMesh()
+        if mesh:
+            anim = mesh.GetAnimInstance()
+            if anim:
+                death_montage = ue.LoadObject(ue.AnimMontage, self.DEATH_MONTAGE_PATH)
+                if death_montage:
+                    result = anim.Montage_Play(death_montage, 1.0)
+                    # 死亡动画播到70%时销毁，避开末尾blend-out过渡
+                    self._death_timer = result * 0.7
+                    ue.LogWarning(f"BaseEnemy: Montage_Play result={result}")
+                else:
+                    ue.LogWarning(f"BaseEnemy: Death montage not found at {self.DEATH_MONTAGE_PATH}")
+        
+        # 停止移动
+        movement = self.CharacterMovement
+        if movement:
+            movement.StopMovementImmediately()
+        
         ue.Log(f"BaseEnemy: {self} died")
     
     def _on_damage(self, amount: float, attacker=None):
@@ -168,8 +188,18 @@ class BaseEnemy(ue.Character):
     
     @ue.ufunction(override=True)
     def ReceiveTick(self, delta_time: float):
+        is_dead = self.health and self.health.is_dead()
+        
+        # 死亡后只做销毁倒计时
+        if is_dead:
+            self._death_timer -= delta_time
+            if self._death_timer <= 0.0:
+                self._spawn_pickup()
+                self.Destroy()
+            return
+        
         # 更新AI
-        if self.ai and not self.health.is_dead():
+        if self.ai:
             self.ai.tick(delta_time)
         
         # 平滑旋转
@@ -200,13 +230,17 @@ class BaseEnemy(ue.Character):
                     self._pending_hit_reset = False
                 elif anim.bIsHit:
                     self._pending_hit_reset = True
-        
-        # 死亡延迟销毁
-        if self.health and self.health.is_dead():
-            self._death_timer -= delta_time
-            if self._death_timer <= 0.0:
-                self.Destroy()
     
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         ue.Log(f"{self} ReceiveEndPlay")
+    
+    def _spawn_pickup(self):
+        """死亡时50%概率生成弹药包/急救包"""
+        from pickup.pickup_item import PickupItem
+        loc = self.GetActorLocation()
+        world = self.GetWorld()
+        if world:
+            pickup = world.SpawnActor(PickupItem, loc, ue.Rotator(0.0, 0.0, 0.0))
+            if pickup:
+                ue.Log(f"BaseEnemy: PickupItem spawned at ({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f})")
