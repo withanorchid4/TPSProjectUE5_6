@@ -97,12 +97,15 @@ class BaseEnemy(ue.Character):
         ue.Log(f"BaseEnemy: {self} died")
     
     def _on_damage(self, amount: float, attacker=None):
-        """受伤回调 — 推送 bIsHit 脉冲"""
+        """受伤回调 — 推送 bIsHit 脉冲 + 伤害跳字"""
         mesh = self.GetMesh()
         if mesh:
             anim = mesh.GetAnimInstance()
             if anim:
                 anim.bIsHit = True
+        
+        # 通知 HUD 显示伤害跳字
+        self._show_damage_number(amount)
         ue.Log(f"BaseEnemy: {self} took {amount} damage, HP={self.health.current_hp:.0f}")
     
     def _on_chase(self):
@@ -244,3 +247,14 @@ class BaseEnemy(ue.Character):
             pickup = world.SpawnActor(PickupItem, loc, ue.Rotator(0.0, 0.0, 0.0))
             if pickup:
                 ue.Log(f"BaseEnemy: PickupItem spawned at ({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f})")
+    
+    def _show_damage_number(self, amount: float):
+        """通知 HUD 显示伤害跳字"""
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if pc:
+            hud = pc.GetHUD()
+            if hud and hasattr(hud, 'add_damage_number'):
+                # 头顶偏移位置
+                loc = self.GetActorLocation()
+                head_pos = ue.Vector(loc.X, loc.Y, loc.Z + 180.0)
+                hud.add_damage_number(head_pos, amount)
