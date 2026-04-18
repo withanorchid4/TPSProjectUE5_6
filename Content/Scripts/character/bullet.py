@@ -34,6 +34,7 @@ class Bullet(ue.Actor):
         self.collision_sphere = None
         self.spawn_time = 0.0
         self._owner_actor = None
+        self.damage_multiplier = 1.0  # 由ShootingComponent在生成时设置
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -143,8 +144,9 @@ class Bullet(ue.Actor):
             return
         
         ue.LogWarning(f"Bullet: Overlapped with {other_actor}")
-        other_actor.take_damage(self.BULLET_DAMAGE, None)
-        ue.LogWarning(f"Bullet: Hit {other_actor} for {self.BULLET_DAMAGE} damage")
+        final_damage = self.BULLET_DAMAGE * self.damage_multiplier
+        other_actor.take_damage(final_damage, None)
+        ue.LogWarning(f"Bullet: Hit {other_actor} for {final_damage:.1f} damage (x{self.damage_multiplier:.1f})")
         self.Destroy()
     
     def _on_hit(self, self_actor, other_actor, normal_impulse, hit_result):

@@ -63,6 +63,7 @@ class KeyboardInputHandler(InputHandler):
         input_comp.BindAction("SwitchWeapon", ue.EInputEvent.IE_Pressed, self._on_switch_weapon)
         input_comp.BindAction("MagicArrow", ue.EInputEvent.IE_Pressed, self._on_magic_arrow)
         input_comp.BindAction("Reload", ue.EInputEvent.IE_Pressed, self._on_reload)
+        input_comp.BindAction("SelfBuff", ue.EInputEvent.IE_Pressed, self._on_self_buff)
         
         ue.LogWarning("KeyboardInputHandler: Input bindings complete!")
     
@@ -175,3 +176,8 @@ class KeyboardInputHandler(InputHandler):
         """手动换弹"""
         if self.shooting:
             self.shooting.start_reload()
+    
+    def _on_self_buff(self):
+        """给自己添加增攻Buff"""
+        if hasattr(self.owner, 'self_buff'):
+            self.owner.self_buff()

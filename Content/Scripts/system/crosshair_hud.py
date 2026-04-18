@@ -58,11 +58,15 @@ class CrosshairHUD(ue.HUD):
         if hasattr(player, 'health') and player.health:
             self._draw_health_bar(size_x, size_y, player)
 
-        # 3) 弹药
+        # 3) Buff状态
+        if hasattr(player, 'buff_component') and player.buff_component:
+            self._draw_buffs(size_x, size_y, player)
+
+        # 4) 弹药
         if hasattr(player, 'shooting') and player.shooting:
             self._draw_ammo(size_x, size_y, player)
 
-        # 4) 伤害跳字
+        # 5) 伤害跳字
         self._draw_damage_numbers(size_x, size_y)
 
     # ────────────────────────────────────────
@@ -128,6 +132,40 @@ class CrosshairHUD(ue.HUD):
         if shooting.is_reloading():
             reload_color = ue.LinearColor(1.0, 0.8, 0.0, 0.9)
             self.DrawText("RELOADING...", reload_color, text_x - 200.0, text_y - 55.0, None, 0.9, False)
+
+    # ────────────────────────────────────────
+    # Buff状态
+    # ────────────────────────────────────────
+    def _draw_buffs(self, size_x, size_y, player):
+        buff_comp = player.buff_component
+        # 按类型聚合
+        buff_types = {}
+        for buff in buff_comp.get_all_buffs():
+            if buff.buff_type not in buff_types:
+                buff_types[buff.buff_type] = {"stacks": 0, "remaining": 0.0}
+            buff_types[buff.buff_type]["stacks"] += 1
+            if buff.remaining > buff_types[buff.buff_type]["remaining"]:
+                buff_types[buff.buff_type]["remaining"] = buff.remaining
+
+        if not buff_types:
+            return
+
+        bar_x = self.HP_BAR_MARGIN_X
+        bar_y = size_y - self.HP_BAR_MARGIN_Y - self.HP_BAR_HEIGHT - 8.0
+
+        for buff_type, info in buff_types.items():
+            if buff_type == "attack_up":
+                label = f"ATK\u2191 x{info['stacks']} [{info['remaining']:.0f}s]"
+                color = ue.LinearColor(0.2, 1.0, 0.3, 0.9)
+            elif buff_type == "attack_down":
+                label = f"ATK\u2193 x{info['stacks']} [{info['remaining']:.0f}s]"
+                color = ue.LinearColor(1.0, 0.3, 0.2, 0.9)
+            else:
+                label = f"{buff_type} x{info['stacks']} [{info['remaining']:.0f}s]"
+                color = ue.LinearColor(1.0, 1.0, 1.0, 0.7)
+
+            self.DrawText(label, color, bar_x, bar_y, None, 0.9, False)
+            bar_y -= 22.0
 
     # ────────────────────────────────────────
     # 伤害跳字

@@ -117,6 +117,7 @@ class ShootingComponent:
                 self._finish_reload()
     
     TRACE_DISTANCE = 100000.0  # 射线检测距离
+    FALLBACK_DISTANCE = 2000.0  # 未命中时的目标距离（避免远点导致角度偏差）
 
     def shoot(self):
         """执行射击"""
@@ -159,11 +160,12 @@ class ShootingComponent:
             b_hit = False
             hit_data = None
         
-        # 目标点：命中点或射线远点
+        # 目标点：命中点或射线上合理距离的点
         if b_hit and hit_data and hasattr(hit_data, 'bBlockingHit') and hit_data.bBlockingHit:
             target_point = hit_data.Location
         else:
-            target_point = trace_end
+            # 未命中时取合理距离，避免10万单位远点导致枪口→目标方向偏差过大
+            target_point = cam_location + cam_forward * self.FALLBACK_DISTANCE
         
         # 子弹方向：从枪口指向目标点
         aim_direction = target_point - hand_location
@@ -184,6 +186,9 @@ class ShootingComponent:
         
         if bullet:
             bullet.SetOwner(self.owner)
+            # 将玩家的攻击倍率传递给子弹
+            if hasattr(self.owner, 'buff_component') and self.owner.buff_component:
+                bullet.damage_multiplier = self.owner.buff_component.get_attack_multiplier()
             self.last_fire_time = self._get_current_time()
             self.current_ammo -= 1
             ue.Log(f"ShootingComponent: Shot fired (ammo={self.current_ammo}/{self.MAX_AMMO})")

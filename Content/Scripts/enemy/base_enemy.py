@@ -27,6 +27,7 @@ class BaseEnemy(ue.Character):
         self._is_stunned = False
         self._target_yaw = None       # 目标朝向（平滑旋转用）
         self._rotation_speed = 15.0    # 旋转插值速度
+        self._is_enemy = True         # 标记：供其他系统识别敌人
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):

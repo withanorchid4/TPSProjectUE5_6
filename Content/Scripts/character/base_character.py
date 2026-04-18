@@ -6,6 +6,7 @@ from .movement import MovementComponent
 from .camera import CameraComponent
 from .shooting import ShootingComponent
 from system.health_component import HealthComponent
+from system.buff_component import BuffComponent
 
 
 @ue.uclass()
@@ -26,6 +27,7 @@ class BaseCharacter(ue.Character):
         self.shooting = None
         self.input_handler = None
         self.health = None
+        self.buff_component = None
         # 受击脉冲（延迟一帧还原）
         self._pending_hit_reset = False
         # 换弹脉冲（延迟一帧还原）
@@ -66,6 +68,9 @@ class BaseCharacter(ue.Character):
         # 创建射击组件
         self.shooting = ShootingComponent(self)
         
+        # 创建Buff组件
+        self.buff_component = BuffComponent(self)
+        
         ue.Log(f"BaseCharacter: Components initialized for {self}")
     
     def set_input_handler(self, handler):
@@ -95,6 +100,16 @@ class BaseCharacter(ue.Character):
         if self.health and not self.health.is_dead():
             self.health.take_damage(amount, attacker)
     
+    def self_buff(self):
+        """给自己添加增攻Buff（外部触发入口，按键等调用）"""
+        if self.buff_component:
+            success = self.buff_component.add_buff("attack_up")
+            if success:
+                stacks = self.buff_component.get_buff_stacks("attack_up")
+                ue.LogWarning(f"BaseCharacter: ATK↑ applied (stacks={stacks})")
+            return success
+        return False
+    
     def _on_damage(self, amount: float, attacker=None):
         """受伤回调 — 推送 bIsHit 脉冲"""
         mesh = self.GetMesh()
@@ -102,6 +117,12 @@ class BaseCharacter(ue.Character):
             anim = mesh.GetAnimInstance()
             if anim:
                 anim.bIsHit = True
+        
+        # 敌人攻击附带减攻debuff
+        if attacker and getattr(attacker, '_is_enemy', False):
+            if self.buff_component:
+                self.buff_component.add_buff("attack_down")
+        
         ue.Log(f"BaseCharacter: took {amount} damage, HP={self.health.current_hp:.0f}")
     
     def _on_death(self):
@@ -127,6 +148,10 @@ class BaseCharacter(ue.Character):
         # 更新输入处理器（移动、射击等）
         if self.input_handler:
             self.input_handler.tick(delta_time)
+        
+        # 更新Buff组件（倒计时+过期移除）
+        if self.buff_component:
+            self.buff_component.tick(delta_time)
         
         # 推送武器切换状态到动画蓝图
         self._update_weapon_anim_state()
