@@ -12,7 +12,6 @@ class ShootingComponent:
     
     SINGLE_FIRE_RATE = 0.15      # 点射间隔（秒）
     AUTO_FIRE_RATE = 0.1         # 连射间隔（秒）
-    MUZZLE_OFFSET_FORWARD = 80.0    # 枪口前方偏移（从武器位置沿枪管方向）
     
     MAX_AMMO = 30                  # 弹夹容量
     TOTAL_AMMO = 90                # 总弹药上限（3个弹夹）
@@ -20,7 +19,6 @@ class ShootingComponent:
     
     def __init__(self, owner):
         self.owner = owner
-        self.bullet_class = None
         self.fire_rate = self.SINGLE_FIRE_RATE
         self.last_fire_time = -999.0
         
@@ -36,26 +34,12 @@ class ShootingComponent:
         self._is_reloading = False
         self._reload_timer = 0.0
     
-    def set_bullet_class(self, bullet_class):
-        """
-        设置子弹类
-        
-        Args:
-            bullet_class: 子弹 Actor 类
-        """
-        self.bullet_class = bullet_class
-        ue.Log(f"ShootingComponent: Bullet class set to: {bullet_class}")
-    
     def _get_current_time(self) -> float:
         """获取当前游戏时间"""
         return self.owner.GetGameTimeSinceCreation()
     
     def can_shoot(self) -> bool:
         """检查是否可以射击"""
-        if not self.bullet_class:
-            ue.LogWarning("ShootingComponent: No bullet class set!")
-            return False
-        
         # 没拿枪不能射击
         if not getattr(self.owner, '_is_weapon_drawn', False):
             return False
@@ -116,11 +100,16 @@ class ShootingComponent:
             if self._reload_timer <= 0.0:
                 self._finish_reload()
     
-    TRACE_DISTANCE = 100000.0  # 射线检测距离
-    FALLBACK_DISTANCE = 2000.0  # 未命中时的目标距离（避免远点导致角度偏差）
+    TRACE_DISTANCE = 100000.0     # 射线检测距离
+    GUN_DAMAGE = 10.0             # 枪械基础伤害
+    MUZZLE_OFFSET_FORWARD = 80.0  # 枪口前方偏移
 
     def shoot(self):
-        """执行射击"""
+        """执行射击（HitScan：LineTrace 射线检测）
+        
+        从摄像机沿准星方向射线，命中后通过 HitResult.Component (WeakPtr).Get()
+        解引用拿到 Component，再 GetOwner() 拿到 Actor，直接扣血。
+        """
         if not self.can_shoot():
             return False
         
@@ -129,73 +118,80 @@ class ShootingComponent:
             ue.LogWarning("ShootingComponent: No controller!")
             return False
         
-        # 起点：手骨世界位置 + 枪口方向偏移
         mesh = self.owner.GetMesh()
         if not mesh:
             ue.LogWarning("ShootingComponent: No mesh!")
             return False
-        hand_location = mesh.GetSocketLocation(ue.Name("hand_r"))
         
-        # 从摄像机位置沿准星方向射线，找命中点
+        # 射线参数
         cam_location = self.owner.camera.camera.GetWorldLocation() if (self.owner.camera and self.owner.camera.camera) else self.owner.GetActorLocation()
         fire_rotation = controller.GetControlRotation()
         cam_forward = ue.KismetMathLibrary.GetForwardVector(fire_rotation)
         trace_end = cam_location + cam_forward * self.TRACE_DISTANCE
         
+        # === LineTrace 射线检测 ===
         hit_result = ue.KismetSystemLibrary.LineTraceSingle(
             self.owner, cam_location, trace_end,
-            ue.ETraceTypeQuery.TraceTypeQuery1,
+            ue.ETraceTypeQuery.TraceTypeQuery2,
             False, [self.owner],
-            0,  # EDrawDebugTrace::None
-            True,  # bIgnoreSelf
+            0,
+            True,
             ue.LinearColor(1.0, 0.0, 0.0, 1.0),
             ue.LinearColor(0.0, 1.0, 0.0, 1.0),
             0.0
         )
         
-        # 返回值是 (bool, HitResult) 元组
+        b_hit = False
+        hit_data = None
         if isinstance(hit_result, tuple) and len(hit_result) == 2:
             b_hit, hit_data = hit_result
-        else:
-            b_hit = False
-            hit_data = None
         
-        # 目标点：命中点或射线上合理距离的点
+        # 从 HitResult 提取命中 Actor：Component (WeakPtr) → Get() → GetOwner()
+        hit_actor = None
+        hit_location = cam_location + cam_forward * 2000.0  # 默认远端点
+        
         if b_hit and hit_data and hasattr(hit_data, 'bBlockingHit') and hit_data.bBlockingHit:
-            target_point = hit_data.Location
-        else:
-            # 未命中时取合理距离，避免10万单位远点导致枪口→目标方向偏差过大
-            target_point = cam_location + cam_forward * self.FALLBACK_DISTANCE
+            hit_location = hit_data.Location
+            comp_ptr = hit_data.Component
+            if comp_ptr and hasattr(comp_ptr, 'Get'):
+                comp = comp_ptr.Get()
+                if comp and hasattr(comp, 'GetOwner'):
+                    hit_actor = comp.GetOwner()
         
-        # 子弹方向：从枪口指向目标点
-        aim_direction = target_point - hand_location
-        aim_length = ue.KismetMathLibrary.VSize(aim_direction)
-        if aim_length > 0.0:
-            aim_direction = aim_direction * (1.0 / aim_length)
+        # 伤害计算
+        damage_multiplier = 1.0
+        if hasattr(self.owner, 'buff_component') and self.owner.buff_component:
+            damage_multiplier = self.owner.buff_component.get_attack_multiplier()
         
-        fire_rotation = ue.KismetMathLibrary.MakeRotFromX(aim_direction)
-        spawn_location = hand_location + aim_direction * self.MUZZLE_OFFSET_FORWARD
+        if hit_actor and hasattr(hit_actor, 'take_damage'):
+            final_damage = self.GUN_DAMAGE * damage_multiplier
+            hit_actor.take_damage(final_damage, self.owner)
+            ue.Log(f"ShootingComponent: HitScan hit {hit_actor} for {final_damage:.1f} damage")
         
-        # 生成子弹
+        # 视觉效果
+        hand_location = mesh.GetSocketLocation(ue.Name("hand_r"))
+        muzzle_location = hand_location + cam_forward * self.MUZZLE_OFFSET_FORWARD
+        
+        # 生成弹道轨迹弹丸（CS 风格：快速飞向命中点）
+        from character.tracer_round import TracerRound
         world = self.owner.GetWorld()
-        bullet = world.SpawnActor(
-            self.bullet_class,
-            spawn_location,
-            fire_rotation
-        )
+        if world:
+            # 从枪口指向命中点的方向，而非摄像机朝向
+            tracer_dir = hit_location - muzzle_location
+            tracer_rotation = ue.KismetMathLibrary.MakeRotFromX(tracer_dir)
+            tracer = world.SpawnActor(TracerRound, muzzle_location, tracer_rotation)
+            if tracer:
+                tracer.set_target(hit_location)
         
-        if bullet:
-            bullet.SetOwner(self.owner)
-            # 将玩家的攻击倍率传递给子弹
-            if hasattr(self.owner, 'buff_component') and self.owner.buff_component:
-                bullet.damage_multiplier = self.owner.buff_component.get_attack_multiplier()
-            self.last_fire_time = self._get_current_time()
-            self.current_ammo -= 1
-            ue.Log(f"ShootingComponent: Shot fired (ammo={self.current_ammo}/{self.MAX_AMMO})")
-            return True
-        else:
-            ue.LogWarning("ShootingComponent: Failed to spawn bullet!")
-            return False
+        if hasattr(self.owner, 'audio') and self.owner.audio:
+            self.owner.audio.play_gunshot(muzzle_location)
+            if hit_actor:
+                self.owner.audio.play_enemy_hit(hit_location)
+        
+        self.last_fire_time = self._get_current_time()
+        self.current_ammo -= 1
+        ue.Log(f"ShootingComponent: Shot fired (ammo={self.current_ammo}/{self.MAX_AMMO})")
+        return True
     
     def is_firing(self) -> bool:
         """检查是否正在射击"""

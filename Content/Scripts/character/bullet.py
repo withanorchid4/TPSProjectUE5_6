@@ -147,6 +147,12 @@ class Bullet(ue.Actor):
         final_damage = self.BULLET_DAMAGE * self.damage_multiplier
         other_actor.take_damage(final_damage, None)
         ue.LogWarning(f"Bullet: Hit {other_actor} for {final_damage:.1f} damage (x{self.damage_multiplier:.1f})")
+        
+        # 播放受击音效 + 爆炸特效
+        owner = self.GetOwner()
+        if owner and hasattr(owner, 'audio') and owner.audio:
+            owner.audio.play_enemy_hit(self.GetActorLocation())
+        
         self.Destroy()
     
     def _on_hit(self, self_actor, other_actor, normal_impulse, hit_result):

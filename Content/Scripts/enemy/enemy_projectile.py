@@ -101,8 +101,11 @@ class EnemyProjectile(ue.Actor):
             return
         
         if hasattr(other_actor, 'take_damage'):
-            other_actor.take_damage(self.PROJECTILE_DAMAGE, None)
+            other_actor.take_damage(self.PROJECTILE_DAMAGE, self.GetOwner())
             ue.Log(f"EnemyProjectile: Hit player for {self.PROJECTILE_DAMAGE}")
+            # 播放敌人攻击音效
+            if hasattr(other_actor, 'audio') and other_actor.audio:
+                other_actor.audio.play_enemy_attack(self.GetActorLocation())
         
         self.Destroy()
     

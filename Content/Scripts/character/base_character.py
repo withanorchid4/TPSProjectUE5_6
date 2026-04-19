@@ -7,6 +7,7 @@ from .camera import CameraComponent
 from .shooting import ShootingComponent
 from system.health_component import HealthComponent
 from system.buff_component import BuffComponent
+from system.audio_manager import AudioManager
 
 
 @ue.uclass()
@@ -28,6 +29,7 @@ class BaseCharacter(ue.Character):
         self.input_handler = None
         self.health = None
         self.buff_component = None
+        self.audio = None
         # 受击脉冲（延迟一帧还原）
         self._pending_hit_reset = False
         # 换弹脉冲（延迟一帧还原）
@@ -50,6 +52,9 @@ class BaseCharacter(ue.Character):
         
         # 挂载武器网格
         self._setup_weapon_mesh()
+        
+        # 标记初始化完成（防止Tick在BeginPlay之前执行）
+        self._initialized = True
     
     def _init_components(self):
         """初始化所有组件"""
@@ -71,6 +76,10 @@ class BaseCharacter(ue.Character):
         # 创建Buff组件
         self.buff_component = BuffComponent(self)
         
+        # 创建音效管理器
+        self.audio = AudioManager(self)
+        self.audio.play_bgm()
+        
         ue.Log(f"BaseCharacter: Components initialized for {self}")
     
     def set_input_handler(self, handler):
@@ -84,16 +93,6 @@ class BaseCharacter(ue.Character):
         handler.set_components(self.movement, self.camera, self.shooting)
         handler.bind()
         ue.Log(f"BaseCharacter: Input handler set to {handler.__class__.__name__}")
-    
-    def set_bullet_class(self, bullet_class):
-        """
-        设置子弹类
-        
-        Args:
-            bullet_class: 子弹 Actor 类
-        """
-        if self.shooting:
-            self.shooting.set_bullet_class(bullet_class)
     
     def take_damage(self, amount: float, attacker=None):
         """受到伤害"""
@@ -141,6 +140,10 @@ class BaseCharacter(ue.Character):
         Args:
             delta_time: 帧间隔时间
         """
+        # 防护：ReceiveTick 可能在 ReceiveBeginPlay 之前执行
+        if not getattr(self, '_initialized', False):
+            return
+        
         # 更新摄像机组件（平滑过渡）
         if self.camera:
             self.camera.tick(delta_time)

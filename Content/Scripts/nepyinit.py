@@ -28,6 +28,24 @@ def on_init():
         import traceback
         traceback.print_exc()
     
+    # 注册 HitscanBullet 类（高速隐形子弹）
+    try:
+        from character.hitscan_bullet import HitscanBullet
+        ue.LogWarning('HitscanBullet class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load HitscanBullet: {e}')
+        import traceback
+        traceback.print_exc()
+    
+    # 注册 TracerRound 类（弹道轨迹弹丸）
+    try:
+        from character.tracer_round import TracerRound
+        ue.LogWarning('TracerRound class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load TracerRound: {e}')
+        import traceback
+        traceback.print_exc()
+    
     # 注册 MagicArrow 类
     try:
         from character import MagicArrow

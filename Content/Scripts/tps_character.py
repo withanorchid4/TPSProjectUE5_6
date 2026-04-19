@@ -12,7 +12,6 @@ TPS 第三人称射击游戏角色
 
 import ue
 from character.base_character import BaseCharacter
-from character import Bullet
 from input_handlers.keyboard_handler import KeyboardInputHandler
 
 
@@ -42,10 +41,6 @@ class TPSCharacter(BaseCharacter):
         self.bUseControllerRotationRoll = False
         
         # 注意：bOrientRotationToMovement 需要在蓝图的 CharacterMovementComponent 中勾选
-        
-        # 设置子弹类（纯 Python 实现）
-        self.set_bullet_class(Bullet)
-        ue.Log("TPSCharacter: Bullet class set")
         
         # 设置输入处理器
         self._setup_input()

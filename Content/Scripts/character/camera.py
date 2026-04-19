@@ -95,6 +95,10 @@ class CameraComponent:
         Args:
             is_aiming: 是否瞄准
         """
+        # 收枪时不能开镜
+        if is_aiming and not getattr(self.owner, '_is_weapon_drawn', False):
+            return
+        
         self._is_aiming = is_aiming
         
         if not self.spring_arm:

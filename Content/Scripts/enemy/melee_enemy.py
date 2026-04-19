@@ -41,5 +41,8 @@ class MeleeEnemy(BaseEnemy):
         if hasattr(player, 'take_damage'):
             player.take_damage(self.MELEE_DAMAGE, self)
             ue.Log(f"MeleeEnemy: Hit player for {self.MELEE_DAMAGE} damage")
+            # 播放攻击音效
+            if hasattr(player, 'audio') and player.audio:
+                player.audio.play_enemy_attack(self.GetActorLocation())
         else:
             ue.Log(f"MeleeEnemy: Attack! (player has no take_damage, dist={dist:.0f})")

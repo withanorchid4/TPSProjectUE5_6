@@ -76,6 +76,13 @@ class BaseEnemy(ue.Character):
         self.SetActorEnableCollision(False)
         self._death_timer = 1.0  # 默认销毁时间，Montage播放成功后会覆盖
         
+        # 播放死亡音效 + 爆炸特效（通过玩家AudioManager）
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if pc:
+            pawn = pc.GetPawn()
+            if pawn and hasattr(pawn, 'audio') and pawn.audio:
+                pawn.audio.play_enemy_death(self.GetActorLocation())
+        
         # 播放死亡 Montage
         mesh = self.GetMesh()
         if mesh:

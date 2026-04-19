@@ -62,8 +62,8 @@ class CrosshairHUD(ue.HUD):
         if hasattr(player, 'buff_component') and player.buff_component:
             self._draw_buffs(size_x, size_y, player)
 
-        # 4) 弹药
-        if hasattr(player, 'shooting') and player.shooting:
+        # 4) 弹药（仅持枪时显示）
+        if getattr(player, '_is_weapon_drawn', False) and hasattr(player, 'shooting') and player.shooting:
             self._draw_ammo(size_x, size_y, player)
 
         # 5) 伤害跳字

@@ -130,6 +130,11 @@ class MagicArrow(ue.Actor):
         if other_actor == self.GetOwner():
             return
         
+        # 播放魔法命中音效
+        owner = self.GetOwner()
+        if owner and hasattr(owner, 'audio') and owner.audio:
+            owner.audio.play_magic_arrow(self.GetActorLocation())
+        
         # 命中任何东西 → 晕眩范围内敌人
         self._stun_nearby_enemies()
         self.Destroy()
@@ -139,6 +144,11 @@ class MagicArrow(ue.Actor):
             return
         if other_actor == self.GetOwner():
             return
+        
+        # 播放魔法命中音效
+        owner = self.GetOwner()
+        if owner and hasattr(owner, 'audio') and owner.audio:
+            owner.audio.play_magic_arrow(self.GetActorLocation())
         
         self._stun_nearby_enemies()
         self.Destroy()
