@@ -69,6 +69,9 @@ class CrosshairHUD(ue.HUD):
         # 5) 伤害跳字
         self._draw_damage_numbers(size_x, size_y)
 
+        # 6) 关卡信息
+        self._draw_level_info(size_x, size_y)
+
     # ────────────────────────────────────────
     # 准星
     # ────────────────────────────────────────
@@ -211,6 +214,44 @@ class CrosshairHUD(ue.HUD):
             remaining.append(entry)
 
         self._damage_numbers = remaining
+
+    # ────────────────────────────────────────
+    # 关卡信息
+    # ────────────────────────────────────────
+    def _draw_level_info(self, size_x, size_y):
+        from system.game_mode import _instance as game_mode
+        if not game_mode:
+            return
+
+        # 左上角：关卡标题
+        level_text = f"LEVEL {game_mode.current_level}"
+        level_color = ue.LinearColor(1.0, 1.0, 1.0, 0.7)
+        self.DrawText(level_text, level_color, 40.0, 40.0, None, 1.2, False)
+
+        # 剩余敌人数
+        enemy_text = f"Enemies: {game_mode.alive_enemies}"
+        enemy_color = ue.LinearColor(1.0, 0.8, 0.3, 0.8)
+        self.DrawText(enemy_text, enemy_color, 40.0, 65.0, None, 1.0, False)
+
+        # 关卡完成提示
+        if game_mode._level_complete:
+            center_x = size_x / 2.0
+            center_y = size_y / 2.0 - 50.0
+
+            if game_mode.current_level == 2:
+                title = "VICTORY!"
+            else:
+                title = "LEVEL COMPLETE!"
+
+            title_color = ue.LinearColor(0.2, 1.0, 0.4, 1.0)
+            self.DrawText(title, title_color, center_x - 120.0, center_y, None, 2.0, False)
+
+            if game_mode.current_level < 2:
+                sub = "Entering next level..."
+            else:
+                sub = "Returning to menu..."
+            sub_color = ue.LinearColor(1.0, 1.0, 1.0, 0.7)
+            self.DrawText(sub, sub_color, center_x - 100.0, center_y + 40.0, None, 1.0, False)
 
     # ────────────────────────────────────────
     # 工具

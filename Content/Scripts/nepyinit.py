@@ -81,6 +81,15 @@ def on_init():
         ue.LogError(f'Failed to load PickupItem: {e}')
         import traceback
         traceback.print_exc()
+
+    # 注册 GameMode 类
+    try:
+        from system.game_mode import TPSGameMode
+        ue.LogWarning('TPSGameMode class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load TPSGameMode: {e}')
+        import traceback
+        traceback.print_exc()
     
     if ue.GIsEditor:
         # 编辑器模式：启动热重载监控

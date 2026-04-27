@@ -73,6 +73,12 @@ class BaseEnemy(ue.Character):
     def _on_death(self):
         """死亡回调"""
         self.ai.set_dead()
+
+        # 通知 GameMode 敌人死亡
+        from system.game_mode import _instance as game_mode
+        if game_mode and hasattr(game_mode, 'on_enemy_killed'):
+            game_mode.on_enemy_killed()
+
         self.SetActorEnableCollision(False)
         self._death_timer = 1.0  # 默认销毁时间，Montage播放成功后会覆盖
         

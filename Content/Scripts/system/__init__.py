@@ -5,5 +5,6 @@ from .health_component import HealthComponent
 from .enemy_ai_component import EnemyAIComponent, EnemyState
 from .buff_component import BuffComponent, BuffData
 from .audio_manager import AudioManager
+from .game_mode import TPSGameMode
 
-__all__ = ['HealthComponent', 'EnemyAIComponent', 'EnemyState', 'BuffComponent', 'BuffData', 'AudioManager']
+__all__ = ['HealthComponent', 'EnemyAIComponent', 'EnemyState', 'BuffComponent', 'BuffData', 'AudioManager', 'TPSGameMode']
