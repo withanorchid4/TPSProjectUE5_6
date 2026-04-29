@@ -233,26 +233,6 @@ class CrosshairHUD(ue.HUD):
         enemy_color = ue.LinearColor(1.0, 0.8, 0.3, 0.8)
         self.DrawText(enemy_text, enemy_color, 40.0, 65.0, None, 1.0, False)
 
-        # 关卡完成提示
-        if game_mode._level_complete:
-            center_x = size_x / 2.0
-            center_y = size_y / 2.0 - 50.0
-
-            if game_mode.current_level == 2:
-                title = "VICTORY!"
-            else:
-                title = "LEVEL COMPLETE!"
-
-            title_color = ue.LinearColor(0.2, 1.0, 0.4, 1.0)
-            self.DrawText(title, title_color, center_x - 120.0, center_y, None, 2.0, False)
-
-            if game_mode.current_level < 2:
-                sub = "Entering next level..."
-            else:
-                sub = "Returning to menu..."
-            sub_color = ue.LinearColor(1.0, 1.0, 1.0, 0.7)
-            self.DrawText(sub, sub_color, center_x - 100.0, center_y + 40.0, None, 1.0, False)
-
     # ────────────────────────────────────────
     # 工具
     # ────────────────────────────────────────

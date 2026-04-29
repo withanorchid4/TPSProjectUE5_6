@@ -131,6 +131,11 @@ class BaseCharacter(ue.Character):
         if self.input_handler:
             self.input_handler.unbind()
         self.SetActorEnableCollision(False)
+
+        # 通知 GameMode 玩家死亡
+        from system.game_mode import _instance as game_mode
+        if game_mode and hasattr(game_mode, 'on_player_died'):
+            game_mode.on_player_died()
     
     @ue.ufunction(override=True)
     def ReceiveTick(self, delta_time: float):
