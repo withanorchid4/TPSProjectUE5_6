@@ -9,21 +9,21 @@ class MagicArrow(ue.Actor):
     """
     魔法箭 Actor
     
-    发光大圆柱飞行体，命中后对范围内敌人晕眩3秒
+    箭矢飞行体 + 冰霜拖尾特效，命中后对范围内敌人晕眩3秒
     """
     
     ARROW_SPEED = 2000.0
     ARROW_LIFETIME = 5.0
     STUN_RADIUS = 500.0       # 晕眩范围
     STUN_DURATION = 3.0        # 晕眩时长
-    ARROW_SCALE_XY = 0.15      # 粗细
-    ARROW_SCALE_Z = 0.6        # 长度
+    ARROW_SCALE = 1.0          # 箭矢缩放
     COLLISION_RADIUS = 30.0
     
     def __init_pyobj__(self):
         self.arrow_mesh = None
         self.collision_sphere = None
         self.projectile_movement = None
+        self.trail_effect = None
         self.spawn_time = 0.0
     
     @ue.ufunction(override=True)
@@ -34,6 +34,7 @@ class MagicArrow(ue.Actor):
         self.spawn_time = self.GetGameTimeSinceCreation()
         self._setup_collision()
         self._setup_visual()
+        self._setup_trail()
         
         self.SetActorLocation(spawn_loc, False, False)
         self.SetActorRotation(spawn_rot, False)
@@ -61,16 +62,23 @@ class MagicArrow(ue.Actor):
         )
         self.arrow_mesh.RegisterComponent()
         
-        cylinder = ue.LoadObject(ue.StaticMesh, "/Engine/BasicShapes/Cylinder.Cylinder")
-        if cylinder:
-            self.arrow_mesh.SetStaticMesh(cylinder)
+        arrow_mesh = ue.LoadObject(ue.StaticMesh, "/Game/Fab/CC0_-_Wooden_Arrow/WoodenArrow1.WoodenArrow1")
+        if arrow_mesh:
+            self.arrow_mesh.SetStaticMesh(arrow_mesh)
+        else:
+            # 回退到 Cone
+            cone = ue.LoadObject(ue.StaticMesh, "/Engine/BasicShapes/Cone.Cone")
+            if cone:
+                self.arrow_mesh.SetStaticMesh(cone)
         
+        # 箭矢模型沿 (1,1,-1) 对角线建模，需旋转补偿至 +X 朝前
+        # Pitch=45° 消除 Z 分量，Yaw=-35.26° 消除 Y 分量
+        self.arrow_mesh.SetRelativeRotation(ue.Rotator(45.0, -35.26, 0.0))
         self.arrow_mesh.SetWorldScale3D(ue.Vector(
-            self.ARROW_SCALE_XY,
-            self.ARROW_SCALE_XY,
-            self.ARROW_SCALE_Z
+            self.ARROW_SCALE,
+            self.ARROW_SCALE,
+            self.ARROW_SCALE
         ))
-        self.arrow_mesh.SetRelativeRotation(ue.Rotator(-90.0, 0.0, 0.0))
         self.arrow_mesh.SetCollisionEnabled(0)  # NoCollision
         
         # 自发光材质
@@ -80,6 +88,33 @@ class MagicArrow(ue.Actor):
         
         if self.collision_sphere:
             self.arrow_mesh.AttachToComponent(
+                self.collision_sphere,
+                ue.Name("None"),
+                ue.EAttachmentRule.KeepRelative,
+                ue.EAttachmentRule.KeepRelative,
+                ue.EAttachmentRule.KeepRelative,
+                False
+            )
+    
+    def _setup_trail(self):
+        """挂载冰霜拖尾 Niagara 特效"""
+        self.trail_effect = ue.NewObject(
+            ue.NiagaraComponent, self, "TrailEffect"
+        )
+        self.trail_effect.RegisterComponent()
+        
+        trail_system = ue.LoadObject(
+            ue.NiagaraSystem,
+            "/Game/ArrowTrail/FX/NS_ArrowTrail_Magic.NS_ArrowTrail_Magic"
+        )
+        if trail_system:
+            self.trail_effect.SetAsset(trail_system)
+            self.trail_effect.SetWorldScale3D(ue.Vector(1000.0, 1000.0, 1000.0))
+        else:
+            ue.LogWarning("MagicArrow: Trail Niagara system not found!")
+        
+        if self.collision_sphere:
+            self.trail_effect.AttachToComponent(
                 self.collision_sphere,
                 ue.Name("None"),
                 ue.EAttachmentRule.KeepRelative,
@@ -98,6 +133,7 @@ class MagicArrow(ue.Actor):
         self.projectile_movement.MaxSpeed = self.ARROW_SPEED
         self.projectile_movement.bRotationFollowsVelocity = True
         self.projectile_movement.bShouldBounce = False
+        self.projectile_movement.ProjectileGravityScale = 0.0
         
         forward = ue.KismetMathLibrary.GetForwardVector(self.GetActorRotation())
         self.projectile_movement.Velocity = forward * self.ARROW_SPEED

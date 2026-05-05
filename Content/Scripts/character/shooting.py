@@ -205,15 +205,47 @@ class ShootingComponent:
         if not controller:
             return
         
-        # 使用摄像机方向
+        # 和子弹一样的 LineTrace：从摄像机沿准星方向找命中点
         fire_rotation = controller.GetControlRotation()
-        actor_location = self.owner.GetActorLocation()
+        cam_location = self.owner.camera.camera.GetWorldLocation() if (self.owner.camera and self.owner.camera.camera) else self.owner.GetActorLocation()
+        cam_forward = ue.KismetMathLibrary.GetForwardVector(fire_rotation)
+        trace_end = cam_location + cam_forward * 100000.0
         
-        forward = ue.KismetMathLibrary.GetForwardVector(fire_rotation)
-        spawn_location = actor_location + forward * 100.0
+        hit_result = ue.KismetSystemLibrary.LineTraceSingle(
+            self.owner, cam_location, trace_end,
+            ue.ETraceTypeQuery.TraceTypeQuery2,
+            False, [self.owner],
+            0, True,
+            ue.LinearColor(1.0, 0.0, 0.0, 1.0),
+            ue.LinearColor(0.0, 1.0, 0.0, 1.0),
+            0.0
+        )
+        
+        # 确定目标点
+        b_hit = False
+        hit_data = None
+        if isinstance(hit_result, tuple) and len(hit_result) == 2:
+            b_hit, hit_data = hit_result
+        
+        if b_hit and hit_data and hasattr(hit_data, 'bBlockingHit') and hit_data.bBlockingHit:
+            target_location = hit_data.Location
+        else:
+            target_location = cam_location + cam_forward * 5000.0
+        
+        # 从枪口位置生成，和子弹同一出发点
+        mesh = self.owner.GetMesh()
+        if mesh:
+            hand_location = mesh.GetSocketLocation(ue.Name("hand_r"))
+            spawn_location = hand_location + cam_forward * self.MUZZLE_OFFSET_FORWARD
+        else:
+            actor_location = self.owner.GetActorLocation()
+            spawn_location = actor_location + cam_forward * 100.0
+        
+        arrow_dir = target_location - spawn_location
+        arrow_rotation = ue.KismetMathLibrary.MakeRotFromX(arrow_dir)
         
         world = self.owner.GetWorld()
-        arrow = world.SpawnActor(MagicArrow, spawn_location, fire_rotation)
+        arrow = world.SpawnActor(MagicArrow, spawn_location, arrow_rotation)
         
         if arrow:
             arrow.SetOwner(self.owner)
