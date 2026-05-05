@@ -28,6 +28,7 @@ class TPSGameMode(ue.GameModeBase):
         self._pending_show_menu = False
         self._pending_restore_input = False
         self._game_result = None  # None/"victory"/"defeat"
+        self._pending_result_widget = None  # None/True(victory)/False(defeat)
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -89,16 +90,17 @@ class TPSGameMode(ue.GameModeBase):
         widget = ue.WidgetBlueprintLibrary.Create(self, widget_class, pc)
         if widget:
             widget.ResultType = "胜利" if is_victory else "失败"
+            widget.bIsFocusable = True
             widget.AddToViewport(0)
-            # 显示鼠标光标
             pc.bShowMouseCursor = True
+            widget.SetKeyboardFocus()
             result = "胜利" if is_victory else "失败"
             ue.LogWarning(f"TPSGameMode: Result widget shown ({result})")
         else:
             ue.LogError("TPSGameMode: CreateWidget returned None!")
 
     def _on_victory(self):
-        """胜利 — Level1进下一关，Level2显示结算界面"""
+        """胜利 — Level1进下一关，Level2延迟一帧显示结算界面"""
         self._level_complete = True
         self._game_result = "victory"
         ue.LogWarning(f"TPSGameMode: Level {self.current_level} VICTORY!")
@@ -106,7 +108,8 @@ class TPSGameMode(ue.GameModeBase):
         if self.current_level == 1:
             self.next_level()
         else:
-            self._show_result_widget(True)
+            # 延迟到下一帧玩家tick中创建Widget，与死亡逻辑一致
+            self._pending_result_widget = True
 
     def on_player_died(self):
         """玩家死亡时调用"""
@@ -115,7 +118,8 @@ class TPSGameMode(ue.GameModeBase):
         self._game_result = "defeat"
         self._level_complete = True
         ue.LogWarning("TPSGameMode: Player DEFEATED!")
-        self._show_result_widget(False)
+        # 延迟到下一帧玩家tick中创建Widget
+        self._pending_result_widget = False
 
     def retry_level(self):
         """重新挑战当前关卡"""

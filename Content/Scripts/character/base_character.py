@@ -34,6 +34,7 @@ class BaseCharacter(ue.Character):
         self._pending_hit_reset = False
         # 换弹脉冲（延迟一帧还原）
         self._pending_reload_reset = False
+        self._death_timer = -1.0
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -132,6 +133,23 @@ class BaseCharacter(ue.Character):
             self.input_handler.unbind()
         self.SetActorEnableCollision(False)
 
+        # 播放死亡 Montage
+        mesh = self.GetMesh()
+        if mesh:
+            anim = mesh.GetAnimInstance()
+            if anim:
+                death_montage = ue.LoadObject(ue.AnimMontage,
+                    "/Game/Characters/Mannequins/Anims/Death/MM_Death_Front_03_Montage.MM_Death_Front_03_Montage")
+                if death_montage:
+                    result = anim.Montage_Play(death_montage, 1.0)
+                    if result > 0:
+                        self._death_timer = result * 0.7
+
+        # 停止移动
+        movement = self.CharacterMovement
+        if movement:
+            movement.StopMovementImmediately()
+
         # 通知 GameMode 玩家死亡
         from system.game_mode import _instance as game_mode
         if game_mode and hasattr(game_mode, 'on_player_died'):
@@ -148,6 +166,21 @@ class BaseCharacter(ue.Character):
         # 防护：ReceiveTick 可能在 ReceiveBeginPlay 之前执行
         if not getattr(self, '_initialized', False):
             return
+        
+        # 检查 GameMode 延迟标记，在玩家tick中创建结算Widget
+        from system.game_mode import _instance as game_mode
+        if game_mode and game_mode._pending_result_widget is not None:
+            is_victory = game_mode._pending_result_widget
+            game_mode._pending_result_widget = None
+            game_mode._show_result_widget(is_victory)
+        
+        # 死亡倒计时销毁
+        if self._death_timer > 0:
+            self._death_timer -= delta_time
+            if self._death_timer <= 0:
+                self._death_timer = -1.0
+                self.Destroy()
+                return
         
         # 更新摄像机组件（平滑过渡）
         if self.camera:
