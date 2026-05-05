@@ -74,8 +74,31 @@ class TPSGameMode(ue.GameModeBase):
         if self.alive_enemies <= 0 and not self._level_complete:
             self._on_victory()
 
+    def _show_result_widget(self, is_victory: bool):
+        """在当前关卡上层显示结算 Widget"""
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if not pc:
+            ue.LogError("TPSGameMode: No PlayerController for result widget!")
+            return
+
+        widget_class = ue.LoadObject(ue.Class, "/Game/BluePrint/WBP_GameResult.WBP_GameResult_C")
+        if not widget_class:
+            ue.LogError("TPSGameMode: Failed to load WBP_GameResult_C!")
+            return
+
+        widget = ue.WidgetBlueprintLibrary.Create(self, widget_class, pc)
+        if widget:
+            widget.ResultType = "胜利" if is_victory else "失败"
+            widget.AddToViewport(0)
+            # 显示鼠标光标
+            pc.bShowMouseCursor = True
+            result = "胜利" if is_victory else "失败"
+            ue.LogWarning(f"TPSGameMode: Result widget shown ({result})")
+        else:
+            ue.LogError("TPSGameMode: CreateWidget returned None!")
+
     def _on_victory(self):
-        """胜利 — Level1直接进下一关，Level2跳转结算关卡"""
+        """胜利 — Level1进下一关，Level2显示结算界面"""
         self._level_complete = True
         self._game_result = "victory"
         ue.LogWarning(f"TPSGameMode: Level {self.current_level} VICTORY!")
@@ -83,7 +106,7 @@ class TPSGameMode(ue.GameModeBase):
         if self.current_level == 1:
             self.next_level()
         else:
-            ue.GameplayStatics.OpenLevel(self, "ResultVictory")
+            self._show_result_widget(True)
 
     def on_player_died(self):
         """玩家死亡时调用"""
@@ -92,7 +115,7 @@ class TPSGameMode(ue.GameModeBase):
         self._game_result = "defeat"
         self._level_complete = True
         ue.LogWarning("TPSGameMode: Player DEFEATED!")
-        ue.GameplayStatics.OpenLevel(self, "ResultDefeat")
+        self._show_result_widget(False)
 
     def retry_level(self):
         """重新挑战当前关卡"""
