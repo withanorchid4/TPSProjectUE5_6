@@ -35,6 +35,7 @@ class TPSGameMode(ue.GameModeBase):
         global _instance
         _instance = self
 
+        t0 = time.time()
         ts = time.strftime("%H:%M:%S")
         level_name = self.GetWorld().GetOuter().GetName()
         ue.LogWarning(f"[{ts}] TPSGameMode: raw level_name='{level_name}'")
@@ -58,7 +59,8 @@ class TPSGameMode(ue.GameModeBase):
         else:
             self.current_level = 1
 
-        ue.LogWarning(f"[{ts}] TPSGameMode: Level {self.current_level} started, enemies={self.alive_enemies}")
+        elapsed = time.time() - t0
+        ue.LogWarning(f"[{ts}] TPSGameMode: Level {self.current_level} started, enemies={self.alive_enemies}, Python init took {elapsed:.3f}s")
         self._pending_restore_input = True
 
     def _count_enemies(self):
