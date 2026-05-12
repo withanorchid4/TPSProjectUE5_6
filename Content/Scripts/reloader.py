@@ -2,6 +2,8 @@
 import sys
 import os
 import gc
+import importlib
+import importlib.util
 import inspect
 import types
 import ue
@@ -170,8 +172,13 @@ class ReloadFinder(object):
 		if old_module:
 			sys.modules[module_name] = old_module
 
-		imp_find_module_result = imp.find_module(short_name, parent_path)
-		new_module = imp.load_module(module_name, *imp_find_module_result)
+		search_paths = parent_path if parent_path else sys.path
+		spec = importlib.util.find_spec(module_name, search_paths)
+		if spec is None:
+			raise ImportError(f"No module spec found for '{module_name}'")
+		new_module = importlib.util.module_from_spec(spec)
+		sys.modules[module_name] = new_module
+		spec.loader.exec_module(new_module)
 
 		old_module_dict = sys._reloader_old_module_dicts.get(module_name)
 		if not old_module_dict:

@@ -35,6 +35,11 @@ class BaseCharacter(ue.Character):
         # 换弹脉冲（延迟一帧还原）
         self._pending_reload_reset = False
         self._death_timer = -1.0
+        # 受伤泛红后处理
+        self._damage_overlay_mpc = None
+        self._damage_mat = None
+        self._damage_ppv = None
+        self._damage_intensity = 0.0
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -53,6 +58,9 @@ class BaseCharacter(ue.Character):
         
         # 挂载武器网格
         self._setup_weapon_mesh()
+        
+        # 初始化受伤泛红后处理材质
+        self._init_damage_overlay()
         
         # 标记初始化完成（防止Tick在BeginPlay之前执行）
         self._initialized = True
@@ -100,6 +108,63 @@ class BaseCharacter(ue.Character):
         if self.health and not self.health.is_dead():
             self.health.take_damage(amount, attacker)
     
+    def _trigger_damage_overlay(self):
+        """受伤时触发屏幕泛红后处理"""
+        self._damage_intensity = 0.5
+        if self._damage_overlay_mpc:
+            self._damage_overlay_mpc.SetScalarParameterValue(ue.Name("DamageIntensity"), self._damage_intensity)
+    
+    def _init_damage_overlay(self):
+        """初始化受伤泛红后处理材质（找到场景中的 PostProcessVolume 并添加材质）"""
+        try:
+            # 加载后处理材质
+            mat = ue.LoadObject(ue.Material,
+                "/Game/Materials/PostProcess/M_damageOverlay.M_damageOverlay")
+            if not mat:
+                ue.LogWarning("BaseCharacter: M_damageOverlay not found, damage overlay disabled")
+                return
+
+            # 创建 MID 并设置父材质
+            mid = ue.NewObject(ue.MaterialInstanceDynamic, self, "DamageOverlayMID")
+            if not mid:
+                ue.LogWarning("BaseCharacter: Failed to create MID")
+                return
+            mid.Parent = mat
+            mid.SetScalarParameterValue(ue.Name("DamageIntensity"), 0.0)
+
+            # 查找场景中已有的 PostProcessVolume
+            ppv_list = ue.GameplayStatics.GetAllActorsOfClass(self, ue.PostProcessVolume)
+            ppv = None
+            if ppv_list and len(ppv_list) > 0:
+                ppv = ppv_list[0]
+                ue.Log(f"BaseCharacter: Found existing PostProcessVolume '{ppv}'")
+            else:
+                ppv = self.GetWorld().SpawnActor(ue.PostProcessVolume,
+                    ue.Vector(0, 0, 0), ue.Rotator(0, 0, 0))
+                if ppv:
+                    ppv.bEnabled = True
+                    ppv.bUnbound = True
+                    ppv.Priority = 100.0
+                    ue.Log("BaseCharacter: Spawned new PostProcessVolume")
+
+            if not ppv:
+                ue.LogWarning("BaseCharacter: No PostProcessVolume available, overlay disabled")
+                return
+
+            ppv.bEnabled = True
+            ppv.bUnbound = True
+
+            # 将 MID 添加到 PPV
+            ppv.AddOrUpdateBlendable(mid, 1.0)
+
+            self._damage_overlay_mpc = mid
+            self._damage_ppv = ppv
+            ue.Log("BaseCharacter: Damage overlay initialized")
+        except Exception as e:
+            ue.LogWarning(f"BaseCharacter: Damage overlay init failed: {e}")
+            self._damage_overlay_mpc = None
+            self._damage_ppv = None
+    
     def self_buff(self):
         """给自己添加增攻Buff（外部触发入口，按键等调用）"""
         if self.buff_component:
@@ -122,6 +187,9 @@ class BaseCharacter(ue.Character):
         if attacker and getattr(attacker, '_is_enemy', False):
             if self.buff_component:
                 self.buff_component.add_buff("attack_down")
+        
+        # 受伤泛红：设置后处理材质参数
+        self._trigger_damage_overlay()
         
         ue.Log(f"BaseCharacter: took {amount} damage, HP={self.health.current_hp:.0f}")
     
@@ -173,6 +241,14 @@ class BaseCharacter(ue.Character):
             is_victory = game_mode._pending_result_widget
             game_mode._pending_result_widget = None
             game_mode._show_result_widget(is_victory)
+        
+        # 受伤泛红淡出
+        if self._damage_intensity > 0:
+            self._damage_intensity -= delta_time * 2.0  # 0.5秒淡出
+            if self._damage_intensity <= 0:
+                self._damage_intensity = 0.0
+            if self._damage_overlay_mpc:
+                self._damage_overlay_mpc.SetScalarParameterValue(ue.Name("DamageIntensity"), self._damage_intensity)
         
         # 死亡倒计时销毁
         if self._death_timer > 0:
