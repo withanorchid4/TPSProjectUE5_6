@@ -2,15 +2,17 @@
 """弹道轨迹弹丸 — 纯视觉，模拟 CS 风格的 tracer"""
 
 import ue
+from system.tickable import TickableMixin
 
 
 @ue.uclass()
-class TracerRound(ue.Actor):
+class TracerRound(ue.Actor, TickableMixin):
     """
     CS 风格弹道轨迹弹丸
     
     从枪口高速飞向命中点，纯视觉不造成伤害。
     旋转由 bRotationFollowsVelocity 自动对齐飞行方向。
+    使用 TickableMixin (ue.AddTicker) 替代 ReceiveTick。
     """
 
     TRACER_SPEED = 30000.0
@@ -23,10 +25,17 @@ class TracerRound(ue.Actor):
         self.projectile_movement = None
         self.spawn_time = 0.0
         self._target_point = None
+        self._ticker_handle = None
+        self._spawn_location = None
+        self._initial_dist_sq = 0.0
 
     def set_target(self, target_point):
         """设置目标点（命中点），用于到达后销毁"""
         self._target_point = target_point
+        # 记录生成位置到目标的距离平方
+        if self._spawn_location:
+            diff = target_point + self._spawn_location * -1.0
+            self._initial_dist_sq = diff.Size() * diff.Size()
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -34,6 +43,7 @@ class TracerRound(ue.Actor):
         spawn_rot = self.GetActorRotation()
 
         self.spawn_time = self.GetGameTimeSinceCreation()
+        self._spawn_location = spawn_loc
 
         # SceneComponent 做根，bRotationFollowsVelocity 控制根的朝向
         self._root_scene = ue.NewObject(
@@ -87,29 +97,20 @@ class TracerRound(ue.Actor):
         forward = ue.KismetMathLibrary.GetForwardVector(spawn_rot)
         self.projectile_movement.Velocity = forward * self.TRACER_SPEED
 
-    def _setup_emissive_material(self):
-        """给弹丸设置自发光材质"""
-        if not self.tracer_mesh:
-            return
-        mat = ue.LoadObject(ue.Material, "/Engine/EngineMaterials/DefaultParticleMaterial.DefaultParticleMaterial")
-        if mat:
-            dyn_mat = self.tracer_mesh.CreateDynamicMaterialInstance(0, mat)
-            if dyn_mat:
-                try:
-                    dyn_mat.SetVectorParameter(ue.Name("Color"), ue.LinearColor(1.0, 0.7, 0.0, 1.0))
-                except Exception:
-                    pass
-        else:
-            mat2 = ue.LoadObject(ue.Material, "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")
-            if mat2:
-                self.tracer_mesh.CreateDynamicMaterialInstance(0, mat2)
+        # 启动 ticker（替代 ReceiveTick）
+        self._start_ticker()
 
-    @ue.ufunction(override=True)
-    def ReceiveTick(self, delta_time: float):
+    def on_tick(self, delta_time):
+        """每帧更新（替代 ReceiveTick）"""
         if self.GetGameTimeSinceCreation() - self.spawn_time > self.MAX_LIFETIME:
+            self._stop_ticker()
             self.Destroy()
             return
-        if self._target_point:
-            diff = self._target_point + self.GetActorLocation() * -1.0
-            if diff.Size() < 50.0:
+        if self._target_point and self._spawn_location:
+            # 高速弹丸每帧移动 ~500 单位，距离判定 <50 会被跳过
+            # 改用行程距离：已飞行距离² >= 起点到目标距离² → 已越过目标点
+            diff_from_spawn = self.GetActorLocation() + self._spawn_location * -1.0
+            traveled_sq = diff_from_spawn.Size() * diff_from_spawn.Size()
+            if traveled_sq >= self._initial_dist_sq:
+                self._stop_ticker()
                 self.Destroy()
