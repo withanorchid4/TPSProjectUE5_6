@@ -139,6 +139,8 @@ class Bullet(ue.Actor):
         if other_actor == owner:
             return
         
+        ue.LogWarning(f"Hahahahaha")
+
         # 只处理有 take_damage 的目标（敌人/玩家），跳过拾取物等
         if not hasattr(other_actor, 'take_damage'):
             return

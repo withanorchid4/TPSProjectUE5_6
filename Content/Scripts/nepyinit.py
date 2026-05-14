@@ -20,22 +20,22 @@ def on_init():
         traceback.print_exc()
     
     # 注册 Bullet 类（用于射击）
-    try:
-        from character import Bullet
-        ue.LogWarning('Bullet class loaded successfully!')
-    except Exception as e:
-        ue.LogError(f'Failed to load Bullet: {e}')
-        import traceback
-        traceback.print_exc()
+    # try:
+    #     from character import Bullet
+    #     ue.LogWarning('Bullet class loaded successfully!')
+    # except Exception as e:
+    #     ue.LogError(f'Failed to load Bullet: {e}')
+    #     import traceback
+    #     traceback.print_exc()
     
     # 注册 HitscanBullet 类（高速隐形子弹）
-    try:
-        from character.hitscan_bullet import HitscanBullet
-        ue.LogWarning('HitscanBullet class loaded successfully!')
-    except Exception as e:
-        ue.LogError(f'Failed to load HitscanBullet: {e}')
-        import traceback
-        traceback.print_exc()
+    # try:
+    #     from character.hitscan_bullet import HitscanBullet
+    #     ue.LogWarning('HitscanBullet class loaded successfully!')
+    # except Exception as e:
+    #     ue.LogError(f'Failed to load HitscanBullet: {e}')
+    #     import traceback
+    #     traceback.print_exc()
     
     # 注册 TracerRound 类（弹道轨迹弹丸）
     try:

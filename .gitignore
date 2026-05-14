@@ -48,3 +48,6 @@ Thumbs.db
 # Other
 *.bak
 *.tmp
+
+# Codely CLI
+.codely-cli/

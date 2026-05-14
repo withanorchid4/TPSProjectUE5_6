@@ -1,0 +1,249 @@
+syntax = "proto3";
+package tps;
+
+// ============ 消息ID ============
+enum MsgId {
+  MSG_NONE          = 0;
+
+  // 登录阶段 100-199
+  CS_LOGIN          = 100;
+  SC_LOGIN_RESULT   = 101;
+  CS_GET_CHARACTERS = 102;
+  SC_CHARACTER_LIST = 103;
+  CS_CREATE_CHAR    = 104;
+  SC_CREATE_RESULT  = 105;
+  CS_SELECT_CHAR    = 106;
+  SC_ENTER_GAME     = 107;
+  CS_RECONNECT_ACK  = 108;
+  SC_RECONNECT      = 109;
+
+  // 游戏阶段 200-299
+  CS_MOVE           = 200;
+  SC_PLAYER_STATES  = 201;
+  CS_SKILL          = 202;
+  SC_SKILL_RESULT   = 203;
+  CS_PICKUP         = 204;
+  SC_PICKUP_RESULT  = 205;
+  CS_SHOOT          = 206;
+  SC_SHOOT_RESULT   = 207;
+  CS_ENEMY_EVENT    = 210;
+  SC_ENEMY_EVENT    = 211;
+  CS_ACTION         = 220;
+  SC_ACTION         = 221;
+  CS_GAME_RESULT    = 230;
+  SC_GAME_RESULT    = 231;
+
+  // 系统 300+
+  SC_DISCONNECT     = 300;
+  SC_PLAYER_JOIN    = 301;
+  SC_PLAYER_LEAVE   = 302;
+}
+
+// ============ 通用类型 ============
+message Vector3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message Rotator {
+  float pitch = 1;
+  float yaw   = 2;
+  float roll  = 3;
+}
+
+message PlayerState {
+  int32    player_id   = 1;
+  string   char_name   = 2;
+  Vector3  location    = 3;
+  Rotator  rotation    = 4;
+  int32    hp          = 5;
+  float    move_speed  = 6;
+  bool     is_sprinting = 7;
+  bool     is_aiming    = 8;
+  bool     is_reloading = 9;
+}
+
+message EnemyState {
+  int32   enemy_id   = 1;
+  int32   enemy_type = 2;  // 0=近战, 1=远程
+  Vector3 location   = 3;
+  int32   hp         = 4;
+}
+
+message ItemState {
+  int32   item_uid   = 1;
+  int32   item_type  = 2;  // 0=血包, 1=弹药, 2=Buff
+  Vector3 location   = 3;
+  bool    active     = 4;
+}
+
+message CharacterInfo {
+  int32  char_id   = 1;
+  string char_name = 2;
+  int32  level     = 3;
+}
+
+// ============ 登录/角色 ============
+message CsLogin {
+  string account     = 1;
+  string password    = 2;
+  bool   is_register = 3;  // true=注册, false=登录
+}
+
+message ScLoginResult {
+  bool   success = 1;
+  string msg     = 2;  // 失败原因
+  string token   = 3;  // 成功时返回
+}
+
+message CsGetCharacters {}
+
+message ScCharacterList {
+  repeated CharacterInfo characters = 1;
+}
+
+message CsCreateCharacter {
+  string char_name = 1;
+}
+
+message ScCreateResult {
+  bool         success   = 1;
+  string       msg       = 2;
+  CharacterInfo character = 3;  // 成功时返回新角色
+}
+
+message CsSelectCharacter {
+  int32 char_id = 1;
+}
+
+message ScEnterGame {
+  repeated PlayerState players    = 1;
+  repeated EnemyState  enemies    = 2;
+  repeated ItemState   items      = 3;
+  PlayerState          self_state = 4;
+}
+
+// ============ 重连 ============
+message ScReconnect {
+  PlayerState          self_state = 1;
+  repeated PlayerState players    = 2;
+  repeated EnemyState  enemies    = 3;
+  repeated ItemState   items      = 4;
+}
+
+message CsReconnectAck {}
+
+// ============ 游戏内 ============
+message CsMove {
+  Vector3 location     = 1;
+  Rotator rotation    = 2;
+  bool    is_sprinting = 3;
+}
+
+message ScPlayerStates {
+  repeated PlayerState players = 1;
+}
+
+message CsSkill {
+  int32   skill_id        = 1;
+  Vector3 target_location  = 2;
+}
+
+message ScSkillResult {
+  int32   player_id       = 1;
+  int32   skill_id        = 2;
+  Vector3 location        = 3;
+  Vector3 target_location = 4;
+}
+
+message CsPickup {
+  int32 item_uid = 1;
+}
+
+message ScPickupResult {
+  bool   success   = 1;
+  int32  player_id = 2;
+  int32  item_uid   = 3;
+}
+
+message CsShoot {
+  Vector3 start_location = 1;
+  Rotator direction      = 2;
+  int32   weapon_type    = 3;  // 0=普通, 1=魔法箭
+}
+
+message ScShootResult {
+  int32   player_id      = 1;
+  Vector3 start_location = 2;
+  Rotator direction      = 3;
+  int32   weapon_type    = 4;
+}
+
+// ============ 系统 ============
+message ScDisconnect {
+  string reason = 1;
+}
+
+message ScPlayerJoin {
+  PlayerState player = 1;
+}
+
+message ScPlayerLeave {
+  int32 player_id = 1;
+}
+
+// ============ 敌人事件 ============
+enum EnemyEventType {
+  ENEMY_DAMAGE  = 0;
+  ENEMY_KILLED  = 1;
+  ENEMY_STUNNED = 2;
+}
+
+message CsEnemyEvent {
+  int32          enemy_id   = 1;  // 客户端分配的敌人ID
+  EnemyEventType event_type = 2;
+  float          value      = 3;  // damage=伤害值, killed=0, stunned=晕眩时长
+}
+
+message ScEnemyEvent {
+  int32          enemy_id   = 1;
+  EnemyEventType event_type = 2;
+  float          value      = 3;
+  int32          player_id  = 4;  // 触发者
+}
+
+// ============ 动作同步 ============
+enum ActionType {
+  ACTION_RELOAD_START = 0;
+  ACTION_RELOAD_END   = 1;
+  ACTION_AIM_START    = 2;
+  ACTION_AIM_END      = 3;
+}
+
+message CsAction {
+  ActionType action_type = 1;
+}
+
+message ScAction {
+  int32      player_id   = 1;
+  ActionType action_type = 2;
+}
+
+// ============ 游戏结果 ============
+enum GameResultType {
+  GAME_VICTORY = 0;
+  GAME_DEFEAT  = 1;
+}
+
+message CsGameResult {
+  GameResultType result = 1;
+  int32          level  = 2;  // 当前关卡
+}
+
+message ScGameResult {
+  int32          player_id = 1;
+  GameResultType result    = 2;
+  int32          level     = 3;
+  bool           level_up  = 4;  // 胜利时是否升级
+}

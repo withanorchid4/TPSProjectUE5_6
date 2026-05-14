@@ -189,10 +189,10 @@ class MagicArrow(ue.Actor, TickableMixin):
     def _on_overlap(self, overlapped_actor, other_actor):
         if not other_actor:
             return
-        ue.LogWarning(f"MagicArrow: _on_overlap other={other_actor}")
+        # ue.LogWarning(f"MagicArrow: _on_overlap other={other_actor}")
         # 忽略 owner
         if other_actor == self.GetOwner():
-            ue.Log("MagicArrow: overlap ignored (owner)")
+            # ue.Log("MagicArrow: overlap ignored (owner)")
             return
         
         # 播放魔法命中音效
@@ -201,7 +201,7 @@ class MagicArrow(ue.Actor, TickableMixin):
             owner.audio.play_magic_arrow(self.GetActorLocation())
         
         # 命中任何东西 → 播放AOE特效 + 晕眩范围内敌人
-        ue.LogWarning(f"MagicArrow: overlap hit! spawning AOE + stun")
+        # ue.LogWarning(f"MagicArrow: overlap hit! spawning AOE + stun")
         self._spawn_aoe_effect()
         self._stun_nearby_enemies()
         self._start_destroy()
@@ -209,9 +209,9 @@ class MagicArrow(ue.Actor, TickableMixin):
     def _on_hit(self, self_actor, other_actor, normal_impulse, hit_result):
         if not other_actor:
             return
-        ue.LogWarning(f"MagicArrow: _on_hit other={other_actor}")
+        # ue.LogWarning(f"MagicArrow: _on_hit other={other_actor}")
         if other_actor == self.GetOwner():
-            ue.Log("MagicArrow: hit ignored (owner)")
+            # ue.Log("MagicArrow: hit ignored (owner)")
             return
         
         # 播放魔法命中音效
@@ -219,14 +219,14 @@ class MagicArrow(ue.Actor, TickableMixin):
         if owner and hasattr(owner, 'audio') and owner.audio:
             owner.audio.play_magic_arrow(self.GetActorLocation())
         
-        ue.LogWarning(f"MagicArrow: hit! spawning AOE + stun")
+        # ue.LogWarning(f"MagicArrow: hit! spawning AOE + stun")
         self._spawn_aoe_effect()
         self._stun_nearby_enemies()
         self._start_destroy()
     
     def _start_destroy(self):
         """隐藏箭矢模型和碰撞，启动2秒延迟销毁"""
-        ue.LogWarning(f"MagicArrow: _start_destroy, will destroy in 2s")
+        # ue.LogWarning(f"MagicArrow: _start_destroy, will destroy in 2s")
         if self.arrow_mesh:
             self.arrow_mesh.SetVisibility(False)
         if self.trail_effect:
@@ -244,7 +244,7 @@ class MagicArrow(ue.Actor, TickableMixin):
             if self.GetGameTimeSinceCreation() - self.spawn_time > 0.05:
                 if self.collision_sphere:
                     self.collision_sphere.SetCollisionEnabled(3)  # QueryAndPhysics
-                    ue.LogWarning("MagicArrow: collision activated (BlockAll)")
+                    # ue.LogWarning("MagicArrow: collision activated (BlockAll)")
                 self._collision_activated = True
         
         # 命中后倒计时销毁

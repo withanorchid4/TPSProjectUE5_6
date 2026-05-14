@@ -62,6 +62,12 @@ class BaseCharacter(ue.Character):
         # 初始化受伤泛红后处理材质
         self._init_damage_overlay()
         
+        # 预加载魔法箭 AOE 特效（避免首次使用时异步编译延迟）
+        aoe_fx = ue.LoadObject(ue.NiagaraSystem,
+            "/Game/Basic_VFX/Niagara/NS_Basic_6.NS_Basic_6")
+        if aoe_fx:
+            ue.Log("BaseCharacter: Magic arrow AOE FX preloaded")
+        
         # 标记初始化完成（防止Tick在BeginPlay之前执行）
         self._initialized = True
     
