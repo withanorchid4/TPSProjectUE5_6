@@ -142,11 +142,15 @@ class KeyboardInputHandler(InputHandler):
         """开始瞄准回调"""
         if self.camera:
             self.camera.set_aiming(True)
+        # 网络同步：瞄准开始
+        self._send_action("aim_start")
 
     def _on_aim_stop(self):
         """停止瞄准回调"""
         if self.camera:
             self.camera.set_aiming(False)
+        # 网络同步：瞄准结束
+        self._send_action("aim_end")
 
     def _on_sprint_start(self):
         """开始冲刺回调"""
@@ -181,3 +185,24 @@ class KeyboardInputHandler(InputHandler):
         """给自己添加增攻Buff"""
         if hasattr(self.owner, 'self_buff'):
             self.owner.self_buff()
+    
+    # ─── 网络同步 ───
+
+    def _send_action(self, action_name):
+        """发送动作同步到服务器"""
+        try:
+            from network.network_manager import NetworkManager
+            from network.proto import tps_pb2
+            nm = NetworkManager.get_instance()
+            if nm.is_in_game:
+                action_map = {
+                    "reload_start": tps_pb2.ACTION_RELOAD_START,
+                    "reload_end": tps_pb2.ACTION_RELOAD_END,
+                    "aim_start": tps_pb2.ACTION_AIM_START,
+                    "aim_end": tps_pb2.ACTION_AIM_END,
+                }
+                action_type = action_map.get(action_name)
+                if action_type is not None:
+                    nm.send_action(action_type)
+        except Exception:
+            pass

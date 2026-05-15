@@ -63,6 +63,7 @@ class GameServer:
 
                 self._broadcast_world_state()
                 self._check_expired_reconnects()
+                self._check_idle_connections()
 
             except KeyboardInterrupt:
                 print("\nGameServer: Shutting down...")
@@ -158,6 +159,21 @@ class GameServer:
             state = self.disconnected_sessions.pop(account, None)
             del self.disconnect_time[account]
             print(f"Expired reconnect state for account: {account}")
+
+    def _check_idle_connections(self):
+        """检测超过30秒无消息的IN_GAME连接，视为断线
+
+        正常客户端每100ms发CsMove，30秒无消息说明已异常断开。
+        非IN_GAME状态的连接（如刚连接还没登录）不做检测。
+        """
+        now = time.time()
+        idle_socks = [
+            sock for sock, session in self.active_sessions.items()
+            if session.state == "IN_GAME" and now - session.last_active > 30
+        ]
+        for sock in idle_socks:
+            print(f"Idle timeout (30s): {self.active_sessions[sock].addr}")
+            self._on_disconnect(sock)
 
     def broadcast(self, msg_id, data, exclude=None):
         """向所有在线玩家广播消息"""

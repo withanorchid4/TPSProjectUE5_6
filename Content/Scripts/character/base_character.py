@@ -40,6 +40,9 @@ class BaseCharacter(ue.Character):
         self._damage_mat = None
         self._damage_ppv = None
         self._damage_intensity = 0.0
+        
+        # 网络管理
+        self._net_manager = None
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -67,6 +70,9 @@ class BaseCharacter(ue.Character):
             "/Game/Basic_VFX/Niagara/NS_Basic_6.NS_Basic_6")
         if aoe_fx:
             ue.Log("BaseCharacter: Magic arrow AOE FX preloaded")
+        
+        # 连接网络（仅本地控制的角色）
+        self._init_network()
         
         # 标记初始化完成（防止Tick在BeginPlay之前执行）
         self._initialized = True
@@ -96,6 +102,46 @@ class BaseCharacter(ue.Character):
         self.audio.play_bgm()
         
         ue.Log(f"BaseCharacter: Components initialized for {self}")
+    
+    def _init_network(self):
+        """初始化网络连接（仅本地控制的角色，且不在MainMenu时）"""
+        try:
+            if not self.IsLocallyControlled():
+                return
+
+            # MainMenu 不连接服务器，只有进入关卡才算入局
+            level_name = self.GetWorld().GetOuter().GetName()
+            if "MainMenu" in level_name:
+                ue.Log("BaseCharacter: In MainMenu, skip network init")
+                return
+
+            from network.network_manager import NetworkManager
+            nm = NetworkManager.get_instance()
+
+            # 如果单例残留了非DISCONNECTED状态（比如上次PIE未正常断开），重置
+            if nm.state != nm.STATE_DISCONNECTED and not nm.is_in_game:
+                ue.LogWarning("BaseCharacter: Resetting stale NetworkManager state")
+                NetworkManager.reset_instance()
+                nm = NetworkManager.get_instance()
+
+            self._net_manager = nm
+
+            # 注册游戏回调
+            self._net_manager.on_enter_game = self._on_net_enter_game
+            self._net_manager.on_player_states = self._on_net_player_states
+            self._net_manager.on_shoot_result = self._on_net_shoot_result
+            self._net_manager.on_player_join = self._on_net_player_join
+            self._net_manager.on_player_leave = self._on_net_player_leave
+            self._net_manager.on_action = self._on_net_action
+
+            # 连接并自动登录
+            if not self._net_manager.is_in_game:
+                self._net_manager.connect_and_login()
+
+            ue.LogWarning("BaseCharacter: Network initialized")
+        except Exception as e:
+            ue.LogError(f"BaseCharacter: Network init failed: {e}")
+            self._net_manager = None
     
     def set_input_handler(self, handler):
         """
@@ -304,6 +350,17 @@ class BaseCharacter(ue.Character):
                 self._weapon_hide_timer = 0.0
                 if hasattr(self, '_weapon_mesh') and self._weapon_mesh:
                     self._weapon_mesh.SetVisibility(False)
+        
+        # 网络同步：发送位置
+        if self._net_manager and self._net_manager.is_in_game:
+            loc = self.GetActorLocation()
+            rot = self.GetActorRotation()
+            is_sprinting = self.movement._is_sprinting if self.movement else False
+            self._net_manager.send_move(
+                {"x": loc.x, "y": loc.y, "z": loc.z},
+                {"pitch": rot.pitch, "yaw": rot.yaw, "roll": rot.roll},
+                is_sprinting
+            )
     
     def switch_weapon(self):
         """切换持枪/收枪状态（E键调用）"""
@@ -406,9 +463,65 @@ class BaseCharacter(ue.Character):
         self._weapon_mesh.SetVisibility(False)
         ue.Log("BaseCharacter: Weapon mesh created and attached to hand_r")
     
+    # ─── 网络回调 ───
+
+    def _on_net_enter_game(self, player_id):
+        """网络：进入游戏（包括断线重连）"""
+        ue.LogWarning(f"BaseCharacter: Entered game via network, player_id={player_id}")
+
+        # 如果是断线重连，把角色传送到服务端记录的位置
+        if self._net_manager and self._net_manager.self_location:
+            loc = self._net_manager.self_location
+            rot = self._net_manager.self_rotation
+            self.K2_SetActorLocation(
+                ue.Vector(loc["x"], loc["y"], loc["z"]), False, None
+            )
+            self.K2_SetActorRotation(
+                ue.Rotator(rot["pitch"], rot["yaw"], rot["roll"]), False
+            )
+            ue.LogWarning(f"BaseCharacter: Teleported to reconnect position "
+                         f"({loc['x']:.0f},{loc['y']:.0f},{loc['z']:.0f})")
+
+    def _on_net_player_states(self, remote_players):
+        """网络：收到远程玩家状态广播"""
+        # Task 11 将在这里生成/更新远程玩家实体
+        pass
+
+    def _on_net_shoot_result(self, shoot_dict):
+        """网络：收到远程玩家射击"""
+        # Task 11 将在这里生成远程玩家的弹道特效
+        pid = shoot_dict.get("player_id", "?")
+        weapon = shoot_dict.get("weapon_type", 0)
+        ue.Log(f"BaseCharacter: Remote player {pid} shot (weapon={weapon})")
+
+    def _on_net_player_join(self, player_state):
+        """网络：远程玩家加入"""
+        pid = player_state.get("player_id", "?")
+        name = player_state.get("char_name", "?")
+        ue.LogWarning(f"BaseCharacter: Player {pid} ({name}) joined")
+
+    def _on_net_player_leave(self, player_id):
+        """网络：远程玩家离开"""
+        ue.LogWarning(f"BaseCharacter: Player {player_id} left")
+
+    def _on_net_action(self, action_dict):
+        """网络：收到远程玩家动作"""
+        pid = action_dict.get("player_id", "?")
+        action = action_dict.get("action_type", 0)
+        ue.Log(f"BaseCharacter: Remote player {pid} action={action}")
+
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
         if self.input_handler:
             self.input_handler.unbind()
+        # 清理网络引用（不主动断开，NetworkManager 是跨关卡的单例）
+        if self._net_manager:
+            self._net_manager.on_enter_game = None
+            self._net_manager.on_player_states = None
+            self._net_manager.on_shoot_result = None
+            self._net_manager.on_player_join = None
+            self._net_manager.on_player_leave = None
+            self._net_manager.on_action = None
+            self._net_manager = None
         ue.Log(f"{self} ReceiveEndPlay")

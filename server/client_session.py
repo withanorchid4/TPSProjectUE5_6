@@ -1,4 +1,5 @@
 import struct
+import time
 
 
 class ClientSession:
@@ -13,6 +14,7 @@ class ClientSession:
         self.account = None           # 登录后设置
         self.player_state = None      # 进游戏后设置
         self.state = "CONNECTED"      # CONNECTED / LOGGED_IN / IN_GAME
+        self.last_active = time.time()  # 上次收到消息的时间
 
     def try_recv(self) -> bool:
         """尝试从 socket 读取数据到缓冲区。返回 False 表示断线。"""
@@ -21,6 +23,7 @@ class ClientSession:
             if not data:
                 return False
             self.recv_buffer += data
+            self.last_active = time.time()
             return True
         except Exception:
             return False

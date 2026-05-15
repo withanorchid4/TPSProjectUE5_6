@@ -191,6 +191,10 @@ class ShootingComponent:
         self.last_fire_time = self._get_current_time()
         self.current_ammo -= 1
         ue.Log(f"ShootingComponent: Shot fired (ammo={self.current_ammo}/{self.MAX_AMMO})")
+        
+        # 网络同步：发送射击信息
+        self._send_shoot_to_server(muzzle_location, fire_rotation)
+        
         return True
     
     def is_firing(self) -> bool:
@@ -250,6 +254,9 @@ class ShootingComponent:
         if arrow:
             arrow.SetOwner(self.owner)
             ue.LogWarning("ShootingComponent: Magic arrow fired!")
+            
+            # 网络同步：发送魔法箭射击信息
+            self._send_shoot_to_server(spawn_location, fire_rotation, weapon_type=1)
         else:
             ue.LogWarning("ShootingComponent: Failed to spawn magic arrow!")
     
@@ -272,6 +279,9 @@ class ShootingComponent:
             if anim:
                 anim.bIsReloading = True
         
+        # 网络同步：发送换弹动作
+        self._send_action_to_server("reload_start")
+        
         ue.LogWarning(f"ShootingComponent: Reloading... ({self.RELOAD_DURATION}s)")
     
     def _finish_reload(self):
@@ -283,6 +293,10 @@ class ShootingComponent:
         refill = min(needed, self.total_ammo)
         self.current_ammo += refill
         self.total_ammo -= refill
+        
+        # 网络同步：发送换弹完成动作
+        self._send_action_to_server("reload_end")
+        
         ue.LogWarning(f"ShootingComponent: Reload complete! ammo={self.current_ammo}, reserve={self.total_ammo}")
     
     def is_reloading(self) -> bool:
@@ -293,3 +307,38 @@ class ShootingComponent:
         """补充总弹药"""
         self.total_ammo += amount
         ue.LogWarning(f"ShootingComponent: +{amount} ammo (reserve={self.total_ammo})")
+    
+    # ─── 网络同步 ───
+
+    def _send_shoot_to_server(self, start_location, fire_rotation, weapon_type=0):
+        """发送射击信息到服务器"""
+        try:
+            from network.network_manager import NetworkManager
+            nm = NetworkManager.get_instance()
+            if nm.is_in_game:
+                nm.send_shoot(
+                    {"x": start_location.x, "y": start_location.y, "z": start_location.z},
+                    {"pitch": fire_rotation.pitch, "yaw": fire_rotation.yaw, "roll": fire_rotation.roll},
+                    weapon_type=weapon_type
+                )
+        except Exception as e:
+            ue.LogError(f"ShootingComponent: send_shoot failed: {e}")
+    
+    def _send_action_to_server(self, action_name):
+        """发送动作同步到服务器"""
+        try:
+            from network.network_manager import NetworkManager
+            from network.proto import tps_pb2
+            nm = NetworkManager.get_instance()
+            if nm.is_in_game:
+                action_map = {
+                    "reload_start": tps_pb2.ACTION_RELOAD_START,
+                    "reload_end": tps_pb2.ACTION_RELOAD_END,
+                    "aim_start": tps_pb2.ACTION_AIM_START,
+                    "aim_end": tps_pb2.ACTION_AIM_END,
+                }
+                action_type = action_map.get(action_name)
+                if action_type is not None:
+                    nm.send_action(action_type)
+        except Exception as e:
+            ue.LogError(f"ShootingComponent: send_action failed: {e}")

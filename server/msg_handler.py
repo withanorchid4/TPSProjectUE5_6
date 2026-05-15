@@ -36,7 +36,8 @@ def handle_login(server, session, data):
             session.player_state = saved
             session.state = "IN_GAME"
 
-            pid = server.game_world.add_player(session)
+            old_pid = saved.get("player_id")
+            pid = server.game_world.add_player(session, reuse_pid=old_pid)
 
             # 发送 ScReconnect
             reconnect = tps_pb2.ScReconnect()
@@ -92,6 +93,10 @@ def handle_login(server, session, data):
 
 def handle_get_characters(server, session, data):
     """处理获取角色列表"""
+    # 如果已经通过断线重连回到IN_GAME，忽略此请求
+    if session.state == "IN_GAME":
+        return []
+
     characters = server.db.get_characters(session.account)
 
     result = tps_pb2.ScCharacterList()
@@ -129,6 +134,10 @@ def handle_create_character(server, session, data):
 
 def handle_select_character(server, session, data):
     """处理选择角色进入游戏"""
+    # 如果已经通过断线重连回到IN_GAME，忽略此请求
+    if session.state == "IN_GAME":
+        return []
+
     msg = tps_pb2.CsSelectCharacter()
     msg.ParseFromString(data)
 
