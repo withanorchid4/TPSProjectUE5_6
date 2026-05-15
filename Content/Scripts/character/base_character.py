@@ -43,6 +43,7 @@ class BaseCharacter(ue.Character):
         
         # 网络管理
         self._net_manager = None
+        self._remote_players = {}  # {player_id: RemotePlayer}
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -483,38 +484,119 @@ class BaseCharacter(ue.Character):
                          f"({loc['x']:.0f},{loc['y']:.0f},{loc['z']:.0f})")
 
     def _on_net_player_states(self, remote_players):
-        """网络：收到远程玩家状态广播"""
-        # Task 11 将在这里生成/更新远程玩家实体
-        pass
+        """网络：收到远程玩家状态广播，更新所有远程玩家位置"""
+        from character.remote_player import RemotePlayer
+        for pid, state in remote_players.items():
+            rp = self._remote_players.get(pid)
+            if rp and not rp._destroyed:
+                rp.update_state(
+                    state["location"],
+                    state["rotation"],
+                    state.get("is_sprinting", False),
+                    state.get("is_aiming", False),
+                    state.get("is_reloading", False),
+                )
 
     def _on_net_shoot_result(self, shoot_dict):
-        """网络：收到远程玩家射击"""
-        # Task 11 将在这里生成远程玩家的弹道特效
+        """网络：收到远程玩家射击，在远程玩家位置生成弹道特效"""
         pid = shoot_dict.get("player_id", "?")
         weapon = shoot_dict.get("weapon_type", 0)
-        ue.Log(f"BaseCharacter: Remote player {pid} shot (weapon={weapon})")
+        rp = self._remote_players.get(pid)
+        if rp and not rp._destroyed:
+            rp.play_shoot(weapon)
+        else:
+            ue.Log(f"BaseCharacter: Remote player {pid} shot but no actor found")
 
     def _on_net_player_join(self, player_state):
-        """网络：远程玩家加入"""
+        """网络：远程玩家加入，spawn 远程玩家 Actor"""
         pid = player_state.get("player_id", "?")
         name = player_state.get("char_name", "?")
-        ue.LogWarning(f"BaseCharacter: Player {pid} ({name}) joined")
+
+        if pid in self._remote_players:
+            ue.LogWarning(f"BaseCharacter: Player {pid} already exists, skip spawn")
+            return
+
+        from character.remote_player import RemotePlayer
+        world = self.GetWorld()
+        if not world:
+            ue.LogError("BaseCharacter: No world, cannot spawn remote player")
+            return
+
+        spawn_loc = player_state.get("location", {"x": 0, "y": 0, "z": 200})
+        spawn_rot = player_state.get("rotation", {"pitch": 0, "yaw": 0, "roll": 0})
+
+        location = ue.Vector(spawn_loc["x"], spawn_loc["y"], spawn_loc["z"])
+        rotation = ue.Rotator(spawn_rot["pitch"], spawn_rot["yaw"], spawn_rot["roll"])
+
+        # 加载蓝图类并 spawn
+        bp_class = ue.LoadObject(ue.Class, RemotePlayer.BP_PATH)
+        if bp_class:
+            rp = world.SpawnActor(bp_class, location, rotation)
+        else:
+            # 蓝图不存在则用纯 Python 类
+            ue.LogWarning("BaseCharacter: BP_RemotePlayer not found, using Python class")
+            rp = world.SpawnActor(RemotePlayer, location, rotation)
+
+        if rp:
+            rp.setup(pid, name)
+            self._remote_players[pid] = rp
+            # 立即更新一次状态
+            rp.update_state(spawn_loc, spawn_rot)
+            ue.LogWarning(f"BaseCharacter: Spawned remote player {pid} ({name})")
+        else:
+            ue.LogError(f"BaseCharacter: Failed to spawn remote player {pid}")
 
     def _on_net_player_leave(self, player_id):
-        """网络：远程玩家离开"""
-        ue.LogWarning(f"BaseCharacter: Player {player_id} left")
+        """网络：远程玩家离开，销毁 Actor"""
+        rp = self._remote_players.pop(player_id, None)
+        if rp and not rp._destroyed:
+            rp.do_cleanup()
+            ue.LogWarning(f"BaseCharacter: Removed remote player {player_id}")
 
     def _on_net_action(self, action_dict):
-        """网络：收到远程玩家动作"""
+        """网络：收到远程玩家动作（换弹/瞄准）"""
         pid = action_dict.get("player_id", "?")
-        action = action_dict.get("action_type", 0)
-        ue.Log(f"BaseCharacter: Remote player {pid} action={action}")
+        action_type = action_dict.get("action_type", 0)
+
+        rp = self._remote_players.get(pid)
+        if not rp or rp._destroyed:
+            return
+
+        from network.proto import tps_pb2
+        mesh = rp.GetMesh()
+        if not mesh:
+            return
+
+        abp = mesh.GetAnimInstance() if mesh else None
+        if not abp:
+            return
+
+        try:
+            if action_type == tps_pb2.ACTION_RELOAD_START:
+                if hasattr(abp, 'bIsReloading'):
+                    abp.bIsReloading = True
+            elif action_type == tps_pb2.ACTION_RELOAD_END:
+                if hasattr(abp, 'bIsReloading'):
+                    abp.bIsReloading = False
+            elif action_type == tps_pb2.ACTION_AIM_START:
+                if hasattr(abp, 'bIsAiming'):
+                    abp.bIsAiming = True
+            elif action_type == tps_pb2.ACTION_AIM_END:
+                if hasattr(abp, 'bIsAiming'):
+                    abp.bIsAiming = False
+        except Exception:
+            pass
 
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
         if self.input_handler:
             self.input_handler.unbind()
+        # 清理远程玩家
+        for pid, rp in list(self._remote_players.items()):
+            if rp and not rp._destroyed:
+                rp.do_cleanup()
+        self._remote_players.clear()
         # 清理网络引用（不主动断开，NetworkManager 是跨关卡的单例）
         if self._net_manager:
             self._net_manager.on_enter_game = None

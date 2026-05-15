@@ -82,6 +82,15 @@ def on_init():
         import traceback
         traceback.print_exc()
 
+    # 注册 RemotePlayer 类（远程玩家实体）
+    try:
+        from character.remote_player import RemotePlayer
+        ue.LogWarning('RemotePlayer class loaded successfully!')
+    except Exception as e:
+        ue.LogError(f'Failed to load RemotePlayer: {e}')
+        import traceback
+        traceback.print_exc()
+    
     # 注册 GameMode 类
     try:
         from system.game_mode import TPSGameMode

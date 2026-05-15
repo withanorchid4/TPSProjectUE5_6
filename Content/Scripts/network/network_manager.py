@@ -459,6 +459,14 @@ class NetworkManager:
             except Exception as e:
                 ue.LogError(f"NetworkManager: on_enter_game callback error: {e}")
 
+        # 为已在线的远程玩家触发 on_player_join（让 BaseCharacter spawn 远程玩家 Actor）
+        if self.on_player_join:
+            for pid, pstate in self.remote_players.items():
+                try:
+                    self.on_player_join(pstate)
+                except Exception as e:
+                    ue.LogError(f"NetworkManager: on_player_join (existing) callback error: {e}")
+
     def _on_player_states(self, msg_id, data):
         """处理玩家状态广播"""
         result = tps_pb2.ScPlayerStates()
