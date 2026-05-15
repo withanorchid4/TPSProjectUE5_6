@@ -149,6 +149,19 @@ class Database:
             print(f"Database.get_character_by_id error: {e}")
             return None
 
+    def delete_character(self, char_id: int, account: str) -> bool:
+        """删除角色（需验证账号归属）"""
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM characters WHERE char_id = ? AND account = ?",
+                (char_id, account)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Database.delete_character error: {e}")
+            return False
+
     def close(self):
         """关闭数据库连接"""
         if self.conn:

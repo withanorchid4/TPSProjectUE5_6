@@ -46,9 +46,12 @@ class NetworkManager:
         self._password = self.DEFAULT_PASSWORD
         self._char_id = None
         self._self_player_id = None
-        self._self_location = None   # 重连时的自身位置 {"x", "y", "z"}
-        self._self_rotation = None   # 重连时的自身旋转 {"pitch", "yaw", "roll"}
-        self._login_step = None  # "register" / "login" / "get_chars" / "create_char" / "select_char" / "reconnected"
+        self._self_location = None   # 服务端记录的自身位置（重连时非None） {"x", "y", "z"}
+        self._self_rotation = None   # 服务端记录的自身旋转（重连时非None） {"pitch", "yaw", "roll"}
+        self._login_step = None  # "register" / "login" / "get_chars" / "create_char" / "select_char"
+
+        # 自动模式标志：connect_and_login() 使用自动流程，UI 模式逐步调用
+        self._auto_mode = True
 
         # 移动上报节流
         self._last_move_time = 0.0
@@ -66,12 +69,19 @@ class NetworkManager:
         self.on_enemy_event = None      # → callback(event_dict)
         self.on_disconnect = None       # → callback()
 
+        # 回调：UI 登录流程（仅 UI 模式使用）
+        self.on_login_result = None     # → callback(success: bool, msg: str)
+        self.on_register_result = None  # → callback(success: bool, msg: str)
+        self.on_character_list = None   # → callback(chars: list[dict])
+        self.on_create_result = None    # → callback(success: bool, char_info: dict|None)
+        self.on_delete_result = None    # → callback(success: bool, msg: str, char_id: int)
+
         # 注册 NetClient 回调
         self._client.register_callback(tps_pb2.SC_LOGIN_RESULT, self._on_login_result)
         self._client.register_callback(tps_pb2.SC_CHARACTER_LIST, self._on_character_list)
         self._client.register_callback(tps_pb2.SC_CREATE_RESULT, self._on_create_result)
+        self._client.register_callback(tps_pb2.SC_DELETE_RESULT, self._on_delete_result)
         self._client.register_callback(tps_pb2.SC_ENTER_GAME, self._on_enter_game)
-        self._client.register_callback(tps_pb2.SC_RECONNECT, self._on_reconnect)
         self._client.register_callback(tps_pb2.SC_PLAYER_STATES, self._on_player_states)
         self._client.register_callback(tps_pb2.SC_PLAYER_JOIN, self._on_player_join)
         self._client.register_callback(tps_pb2.SC_PLAYER_LEAVE, self._on_player_leave)
@@ -113,13 +123,72 @@ class NetworkManager:
 
     @property
     def self_location(self):
-        """重连时服务端记录的位置（仅重连后有效，正常进游戏为None）"""
+        """服务端记录的位置（重连时为断线前位置，正常进游戏为None）"""
         return self._self_location
 
     @property
     def self_rotation(self):
-        """重连时服务端记录的旋转（仅重连后有效，正常进游戏为None）"""
+        """服务端记录的旋转（重连时为断线前旋转，正常进游戏为None）"""
         return self._self_rotation
+
+    def connect(self, host=None, port=None):
+        """仅建立 TCP 连接（UI 模式使用）
+
+        连接成功后，UI 可调用 login() 或 register()。
+        """
+        if self._state != self.STATE_DISCONNECTED:
+            ue.LogWarning(f"NetworkManager: Already connecting/connected (state={self._state})")
+            return False
+
+        host = host or self.DEFAULT_HOST
+        port = port or self.DEFAULT_PORT
+
+        self._auto_mode = False
+        self._state = self.STATE_CONNECTING
+
+        if not self._client.connect(host, port):
+            self._state = self.STATE_DISCONNECTED
+            ue.LogError("NetworkManager: Connect failed")
+            return False
+
+        ue.LogWarning(f"NetworkManager: Connected to {host}:{port}")
+        return True
+
+    def login(self, account, password):
+        """发送登录请求（UI 模式使用，需先 connect）"""
+        self._auto_mode = False
+        self._account = account
+        self._password = password
+        self._send_login()
+
+    def register(self, account, password):
+        """发送注册请求（UI 模式使用，需先 connect）"""
+        self._auto_mode = False
+        self._account = account
+        self._password = password
+        self._send_register()
+
+    def get_characters(self):
+        """请求角色列表（UI 模式使用，需先 login）"""
+        self._send_get_characters()
+
+    def select_character(self, char_id):
+        """选择角色进入游戏（UI 模式使用）"""
+        self._send_select_character(char_id)
+
+    def create_character(self, char_name=None):
+        """创建角色（UI 模式使用）"""
+        name = char_name or f"Player_{self._account}"
+        self._login_step = "create_char"
+        msg = tps_pb2.CsCreateCharacter(char_name=name)
+        self._client.send_msg(tps_pb2.CS_CREATE_CHAR, msg.SerializeToString())
+        ue.LogWarning(f"NetworkManager: Creating character '{name}'...")
+
+    def delete_character(self, char_id):
+        """删除角色（UI 模式使用）"""
+        msg = tps_pb2.CsDeleteCharacter(char_id=char_id)
+        self._client.send_msg(tps_pb2.CS_DELETE_CHAR, msg.SerializeToString())
+        ue.LogWarning(f"NetworkManager: Deleting character {char_id}...")
 
     def connect_and_login(self, host=None, port=None, account=None, password=None):
         """连接服务器并自动完成登录→创角→进游戏全流程
@@ -253,115 +322,136 @@ class NetworkManager:
         result.ParseFromString(data)
 
         if self._login_step == "register":
-            if result.success:
-                ue.LogWarning("NetworkManager: Register success, now logging in...")
-                self._send_login()
+            if self._auto_mode:
+                if result.success:
+                    ue.LogWarning("NetworkManager: Register success, now logging in...")
+                    self._send_login()
+                else:
+                    ue.LogWarning(f"NetworkManager: Register failed ({result.msg}), trying login...")
+                    self._send_login()
             else:
-                ue.LogWarning(f"NetworkManager: Register failed ({result.msg}), trying login...")
-                self._send_login()
+                # UI 模式：回调通知 UI
+                if self.on_register_result:
+                    try:
+                        self.on_register_result(result.success, result.msg)
+                    except Exception as e:
+                        ue.LogError(f"NetworkManager: on_register_result callback error: {e}")
 
         elif self._login_step == "login":
-            if result.success:
-                ue.LogWarning("NetworkManager: Login success!")
-                self._send_get_characters()
+            if self._auto_mode:
+                if result.success:
+                    ue.LogWarning("NetworkManager: Login success!")
+                    self._send_get_characters()
+                else:
+                    ue.LogError(f"NetworkManager: Login failed: {result.msg}")
+                    self._state = self.STATE_DISCONNECTED
             else:
-                ue.LogError(f"NetworkManager: Login failed: {result.msg}")
-                self._state = self.STATE_DISCONNECTED
+                # UI 模式：回调通知 UI
+                if self.on_login_result:
+                    try:
+                        self.on_login_result(result.success, result.msg)
+                    except Exception as e:
+                        ue.LogError(f"NetworkManager: on_login_result callback error: {e}")
+                if not result.success:
+                    self._state = self.STATE_DISCONNECTED
 
     def _on_character_list(self, msg_id, data):
         """处理角色列表"""
-        # 如果已经通过断线重连进入游戏，忽略
-        if self._login_step == "reconnected":
-            return
-
         result = tps_pb2.ScCharacterList()
         result.ParseFromString(data)
 
-        if len(result.characters) > 0:
-            # 选择第一个角色
-            char = result.characters[0]
-            self._char_id = char.char_id
-            ue.LogWarning(f"NetworkManager: Found character '{char.char_name}' (lv{char.level}), selecting...")
-            self._send_select_character(char.char_id)
+        if self._auto_mode:
+            if len(result.characters) > 0:
+                # 选择第一个角色
+                char = result.characters[0]
+                self._char_id = char.char_id
+                ue.LogWarning(f"NetworkManager: Found character '{char.char_name}' (lv{char.level}), selecting...")
+                self._send_select_character(char.char_id)
+            else:
+                # 没有角色，创建一个
+                ue.LogWarning("NetworkManager: No characters, creating one...")
+                self._send_create_character()
         else:
-            # 没有角色，创建一个
-            ue.LogWarning("NetworkManager: No characters, creating one...")
-            self._send_create_character()
+            # UI 模式：回调通知 UI，由 UI 决定选角/创角
+            chars = []
+            for c in result.characters:
+                chars.append({
+                    "char_id": c.char_id,
+                    "char_name": c.char_name,
+                    "level": c.level,
+                })
+            if self.on_character_list:
+                try:
+                    self.on_character_list(chars)
+                except Exception as e:
+                    ue.LogError(f"NetworkManager: on_character_list callback error: {e}")
 
     def _on_create_result(self, msg_id, data):
         """处理创角结果"""
-        # 如果已经通过断线重连进入游戏，忽略
-        if self._login_step == "reconnected":
-            return
-
         result = tps_pb2.ScCreateResult()
         result.ParseFromString(data)
 
-        if result.success:
-            self._char_id = result.character.char_id
-            ue.LogWarning(f"NetworkManager: Character '{result.character.char_name}' created, selecting...")
-            self._send_select_character(result.character.char_id)
+        if self._auto_mode:
+            if result.success:
+                self._char_id = result.character.char_id
+                ue.LogWarning(f"NetworkManager: Character '{result.character.char_name}' created, selecting...")
+                self._send_select_character(result.character.char_id)
+            else:
+                ue.LogError(f"NetworkManager: Create character failed: {result.msg}")
+                self._state = self.STATE_DISCONNECTED
         else:
-            ue.LogError(f"NetworkManager: Create character failed: {result.msg}")
-            self._state = self.STATE_DISCONNECTED
+            # UI 模式：回调通知 UI
+            char_info = None
+            if result.success:
+                char_info = {
+                    "char_id": result.character.char_id,
+                    "char_name": result.character.char_name,
+                    "level": result.character.level,
+                }
+            if self.on_create_result:
+                try:
+                    self.on_create_result(result.success, char_info)
+                except Exception as e:
+                    ue.LogError(f"NetworkManager: on_create_result callback error: {e}")
+
+    def _on_delete_result(self, msg_id, data):
+        """处理删除角色结果"""
+        result = tps_pb2.ScDeleteResult()
+        result.ParseFromString(data)
+
+        if self.on_delete_result:
+            try:
+                self.on_delete_result(result.success, result.msg, result.char_id)
+            except Exception as e:
+                ue.LogError(f"NetworkManager: on_delete_result callback error: {e}")
 
     def _on_enter_game(self, msg_id, data):
-        """处理进入游戏"""
-        # 如果已经通过断线重连进入游戏，忽略（防止重复进游戏）
-        if self._login_step == "reconnected":
-            return
-
+        """处理进入游戏（含断线重连）"""
         result = tps_pb2.ScEnterGame()
         result.ParseFromString(data)
 
         self._self_player_id = result.self_state.player_id
         self._state = self.STATE_IN_GAME
 
+        # 保存服务端记录的位置（重连时为断线前位置，正常进游戏为默认位置）
+        loc = result.self_state.location
+        rot = result.self_state.rotation
+        # 仅当位置非默认时标记为重连位置（供 BaseCharacter 传送）
+        if loc.x != 0 or loc.y != 0 or loc.z != 200:
+            self._self_location = {"x": loc.x, "y": loc.y, "z": loc.z}
+            self._self_rotation = {"pitch": rot.pitch, "yaw": rot.yaw, "roll": rot.roll}
+        else:
+            self._self_location = None
+            self._self_rotation = None
+
         # 缓存其他玩家
-        for p in result.players:
-            self.remote_players[p.player_id] = _player_state_to_dict(p)
-
-        ue.LogWarning(f"NetworkManager: Entered game! player_id={self._self_player_id}, "
-                      f"remote_players={list(self.remote_players.keys())}")
-
-        if self.on_enter_game:
-            try:
-                self.on_enter_game(self._self_player_id)
-            except Exception as e:
-                ue.LogError(f"NetworkManager: on_enter_game callback error: {e}")
-
-    def _on_reconnect(self, msg_id, data):
-        """处理断线重连"""
-        result = tps_pb2.ScReconnect()
-        result.ParseFromString(data)
-
-        self._self_player_id = result.self_state.player_id
-        self._state = self.STATE_IN_GAME
-        self._login_step = "reconnected"  # 阻止后续登录流程步骤
-
-        # 保存服务端记录的位置，供 BaseCharacter 传送用
-        self._self_location = {
-            "x": result.self_state.location.x,
-            "y": result.self_state.location.y,
-            "z": result.self_state.location.z,
-        }
-        self._self_rotation = {
-            "pitch": result.self_state.rotation.pitch,
-            "yaw": result.self_state.rotation.yaw,
-            "roll": result.self_state.rotation.roll,
-        }
-
-        # 清空并重建远程玩家缓存
         self.remote_players.clear()
         for p in result.players:
             self.remote_players[p.player_id] = _player_state_to_dict(p)
 
-        ue.LogWarning(f"NetworkManager: Reconnected! player_id={self._self_player_id}, "
-                      f"location=({result.self_state.location.x:.0f},{result.self_state.location.y:.0f},{result.self_state.location.z:.0f})")
-
-        # 发送重连确认
-        ack = tps_pb2.CsReconnectAck()
-        self._client.send_msg(tps_pb2.CS_RECONNECT_ACK, ack.SerializeToString())
+        loc_str = f"({loc.x:.0f},{loc.y:.0f},{loc.z:.0f})" if self._self_location else "default"
+        ue.LogWarning(f"NetworkManager: Entered game! player_id={self._self_player_id}, "
+                      f"location={loc_str}, remote_players={list(self.remote_players.keys())}")
 
         if self.on_enter_game:
             try:

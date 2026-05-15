@@ -16,6 +16,8 @@ enum MsgId {
   SC_ENTER_GAME     = 107;
   CS_RECONNECT_ACK  = 108;
   SC_RECONNECT      = 109;
+  CS_DELETE_CHAR    = 110;
+  SC_DELETE_RESULT  = 111;
 
   // 游戏阶段 200-299
   CS_MOVE           = 200;
@@ -133,6 +135,16 @@ message ScReconnect {
 }
 
 message CsReconnectAck {}
+
+message CsDeleteCharacter {
+  int32 char_id = 1;
+}
+
+message ScDeleteResult {
+  bool   success = 1;
+  string msg     = 2;
+  int32  char_id = 3;
+}
 
 // ============ 游戏内 ============
 message CsMove {

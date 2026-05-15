@@ -25,10 +25,10 @@ class TPSGameMode(ue.GameModeBase):
         self.current_level = 0
         self._level_complete = False
         self._is_main_menu = False
-        self._pending_show_menu = False
-        self._pending_restore_input = False
         self._game_result = None  # None/"victory"/"defeat"
         self._pending_result_widget = None  # None/True(victory)/False(defeat)
+        self._login_panel = None  # 登录界面控制器
+        self._main_menu_panel = None  # 主菜单界面控制器
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -42,8 +42,9 @@ class TPSGameMode(ue.GameModeBase):
 
         if "MainMenu" in level_name:
             self._is_main_menu = True
-            self._pending_show_menu = True
-            ue.LogWarning(f"[{ts}] TPSGameMode: MainMenu detected")
+            # 用 AddTicker 延迟一帧显示菜单（ReceiveTick 在 NePy 中不可靠）
+            self._menu_ticker = ue.AddTicker(self._deferred_show_menu, 1)
+            ue.LogWarning(f"[{ts}] TPSGameMode: MainMenu detected, menu ticker added")
             return
 
         # 游戏关卡
@@ -61,7 +62,8 @@ class TPSGameMode(ue.GameModeBase):
 
         elapsed = time.time() - t0
         ue.LogWarning(f"[{ts}] TPSGameMode: Level {self.current_level} started, enemies={self.alive_enemies}, Python init took {elapsed:.3f}s")
-        self._pending_restore_input = True
+        # 用 AddTicker 延迟恢复输入（ReceiveTick 在 NePy 中不可靠）
+        ue.AddTicker(self._deferred_restore_input, 1)
 
     def _count_enemies(self):
         """统计场景中所有敌人"""
@@ -138,9 +140,60 @@ class TPSGameMode(ue.GameModeBase):
         if self.current_level == 1:
             ue.GameplayStatics.OpenLevel(self, "Level2")
 
-    def _show_main_menu(self):
-        """主菜单 Widget 创建由蓝图处理"""
-        ue.LogWarning("TPSGameMode: Main menu flag set")
+    def _deferred_show_menu(self, delta_time):
+        """延迟一帧显示菜单（由 AddTicker 调用，返回 False 停止）"""
+        try:
+            pc = ue.GameplayStatics.GetPlayerController(self, 0)
+            if pc:
+                self._show_login_ui()
+                return False  # 停止 ticker
+            else:
+                ue.LogWarning("TPSGameMode: No PC yet, retrying next frame...")
+                return True  # 继续下一帧重试
+        except Exception as e:
+            ue.LogError(f"TPSGameMode: _deferred_show_menu error: {e}")
+            return False  # 出错时停止 ticker，避免无限重试
+
+    def _deferred_restore_input(self, delta_time):
+        """延迟恢复输入模式"""
+        self._restore_game_input()
+        return False  # 停止 ticker
+
+    def _show_login_ui(self):
+        """显示登录界面"""
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if not pc:
+            ue.LogError("TPSGameMode: No PlayerController for login UI!")
+            return
+
+        from ui.login_ui import LoginPanel
+        self._login_panel = LoginPanel(self, pc)
+        self._login_panel.set_login_success_callback(self._on_login_success)
+        ue.LogWarning("TPSGameMode: Login UI shown")
+
+    def _on_login_success(self, chars):
+        """登录成功回调：销毁登录界面，显示主菜单"""
+        if self._login_panel:
+            self._login_panel.destroy()
+            self._login_panel = None
+
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if not pc:
+            ue.LogError("TPSGameMode: No PlayerController for main menu!")
+            return
+
+        from ui.main_menu_ui import MainMenuPanel
+        self._main_menu_panel = MainMenuPanel(self, pc, chars)
+        self._main_menu_panel.set_enter_game_callback(self._on_login_enter_game)
+        ue.LogWarning("TPSGameMode: Main menu shown")
+
+    def _on_login_enter_game(self):
+        """进入游戏：加载关卡"""
+        ue.LogWarning("TPSGameMode: Login complete, loading Level1...")
+        if self._main_menu_panel:
+            self._main_menu_panel.destroy()
+            self._main_menu_panel = None
+        ue.GameplayStatics.OpenLevel(self, "Level1")
 
     def _restore_game_input(self):
         """恢复游戏输入模式"""
@@ -149,14 +202,4 @@ class TPSGameMode(ue.GameModeBase):
             pc.bShowMouseCursor = False
             ue.LogWarning("TPSGameMode: Game input restore attempted")
 
-    @ue.ufunction(override=True)
-    def ReceiveTick(self, delta_time: float):
-        if self._pending_show_menu:
-            pc = ue.GameplayStatics.GetPlayerController(self, 0)
-            if pc:
-                self._pending_show_menu = False
-                self._show_main_menu()
 
-        if self._pending_restore_input:
-            self._pending_restore_input = False
-            self._restore_game_input()

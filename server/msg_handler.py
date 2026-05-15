@@ -28,75 +28,11 @@ def handle_login(server, session, data):
         session.account = msg.account
         session.state = "LOGGED_IN"
 
-        # 检查断线重连
-        if msg.account in server.disconnected_sessions:
-            saved = server.disconnected_sessions.pop(msg.account)
-            del server.disconnect_time[msg.account]
-
-            session.player_state = saved
-            session.state = "IN_GAME"
-
-            old_pid = saved.get("player_id")
-            pid = server.game_world.add_player(session, reuse_pid=old_pid)
-
-            # 发送 ScReconnect
-            reconnect = tps_pb2.ScReconnect()
-            ps = reconnect.self_state
-            ps.player_id = saved.get("player_id", pid)
-            ps.char_name = saved.get("char_name", "")
-            ps.location.x = saved.get("location", {}).get("x", 0)
-            ps.location.y = saved.get("location", {}).get("y", 0)
-            ps.location.z = saved.get("location", {}).get("z", 200)
-            ps.rotation.pitch = saved.get("rotation", {}).get("pitch", 0)
-            ps.rotation.yaw = saved.get("rotation", {}).get("yaw", 0)
-            ps.rotation.roll = saved.get("rotation", {}).get("roll", 0)
-            ps.hp = saved.get("hp", 100)
-            ps.move_speed = saved.get("move_speed", 600)
-
-            # 添加其他玩家
-            for p in server.game_world.get_all_player_states():
-                if p["player_id"] != ps.player_id:
-                    player = reconnect.players.add()
-                    player.player_id = p["player_id"]
-                    player.char_name = p["char_name"]
-                    player.location.x = p["location"]["x"]
-                    player.location.y = p["location"]["y"]
-                    player.location.z = p["location"]["z"]
-                    player.rotation.pitch = p["rotation"]["pitch"]
-                    player.rotation.yaw = p["rotation"]["yaw"]
-                    player.rotation.roll = p["rotation"]["roll"]
-                    player.hp = p["hp"]
-                    player.move_speed = p["move_speed"]
-
-            session.send_msg(MsgId.SC_RECONNECT, reconnect.SerializeToString())
-
-            # 广播 ScPlayerJoin
-            join_msg = tps_pb2.ScPlayerJoin()
-            join_msg.player.player_id = ps.player_id
-            join_msg.player.char_name = ps.char_name
-            join_msg.player.location.x = ps.location.x
-            join_msg.player.location.y = ps.location.y
-            join_msg.player.location.z = ps.location.z
-            join_msg.player.rotation.pitch = ps.rotation.pitch
-            join_msg.player.rotation.yaw = ps.rotation.yaw
-            join_msg.player.rotation.roll = ps.rotation.roll
-            join_msg.player.hp = ps.hp
-            join_msg.player.move_speed = ps.move_speed
-            join_msg.player.is_sprinting = False
-            join_msg.player.is_aiming = False
-            join_msg.player.is_reloading = False
-
-            broadcasts.append((MsgId.SC_PLAYER_JOIN, join_msg.SerializeToString(), session))
-
     return broadcasts
 
 
 def handle_get_characters(server, session, data):
     """处理获取角色列表"""
-    # 如果已经通过断线重连回到IN_GAME，忽略此请求
-    if session.state == "IN_GAME":
-        return []
-
     characters = server.db.get_characters(session.account)
 
     result = tps_pb2.ScCharacterList()
@@ -133,11 +69,7 @@ def handle_create_character(server, session, data):
 
 
 def handle_select_character(server, session, data):
-    """处理选择角色进入游戏"""
-    # 如果已经通过断线重连回到IN_GAME，忽略此请求
-    if session.state == "IN_GAME":
-        return []
-
+    """处理选择角色进入游戏（含断线重连）"""
     msg = tps_pb2.CsSelectCharacter()
     msg.ParseFromString(data)
 
@@ -149,14 +81,28 @@ def handle_select_character(server, session, data):
         session.send_msg(MsgId.SC_DISCONNECT, result.SerializeToString())
         return []
 
-    # 设置玩家状态
-    if session.player_state is None:
-        session.player_state = {}
-    session.player_state.update(char)
+    # 断线重连：如果有保存的会话，用保存的位置，但角色名用新选的
+    reuse_pid = None
+    is_reconnect = session.account in server.disconnected_sessions
+
+    if is_reconnect:
+        saved = server.disconnected_sessions.pop(session.account)
+        del server.disconnect_time[session.account]
+        reuse_pid = saved.get("player_id")
+        session.player_state = saved  # 保存了旧位置/旋转等
+        session.player_state.update(char)  # 覆盖 char_name 为新选的角色
+    else:
+        if session.player_state is None:
+            session.player_state = {}
+        session.player_state.update(char)
+
     session.state = "IN_GAME"
 
     # 加入游戏世界
-    pid = server.game_world.add_player(session)
+    pid = server.game_world.add_player(session, reuse_pid=reuse_pid)
+
+    # 从 session.player_state 取位置（重连时是旧位置，新进时是默认值）
+    ps_data = session.player_state
 
     # 发送 ScEnterGame
     enter_game = tps_pb2.ScEnterGame()
@@ -165,17 +111,22 @@ def handle_select_character(server, session, data):
     ps = enter_game.self_state
     ps.player_id = pid
     ps.char_name = char["char_name"]
-    ps.location.x = 0
-    ps.location.y = 0
-    ps.location.z = 200
-    ps.rotation.pitch = 0
-    ps.rotation.yaw = 0
-    ps.rotation.roll = 0
-    ps.hp = 100
-    ps.move_speed = 600
-    ps.is_sprinting = False
-    ps.is_aiming = False
-    ps.is_reloading = False
+    ps.location.x = ps_data.get("location", {}).get("x", 0)
+    ps.location.y = ps_data.get("location", {}).get("y", 0)
+    ps.location.z = ps_data.get("location", {}).get("z", 200)
+    ps.rotation.pitch = ps_data.get("rotation", {}).get("pitch", 0)
+    ps.rotation.yaw = ps_data.get("rotation", {}).get("yaw", 0)
+    ps.rotation.roll = ps_data.get("rotation", {}).get("roll", 0)
+    ps.hp = ps_data.get("hp", 100)
+    ps.move_speed = ps_data.get("move_speed", 600)
+    ps.is_sprinting = ps_data.get("is_sprinting", False)
+    ps.is_aiming = ps_data.get("is_aiming", False)
+    ps.is_reloading = ps_data.get("is_reloading", False)
+
+    if is_reconnect:
+        print(f"[RECONNECT] {session.account} resumed at "
+              f"({ps.location.x:.0f},{ps.location.y:.0f},{ps.location.z:.0f}) "
+              f"with character '{char['char_name']}'")
 
     # 其他玩家
     for p in server.game_world.get_all_player_states():
@@ -207,9 +158,9 @@ def handle_select_character(server, session, data):
     join_msg.player.rotation.roll = ps.rotation.roll
     join_msg.player.hp = ps.hp
     join_msg.player.move_speed = ps.move_speed
-    join_msg.player.is_sprinting = False
-    join_msg.player.is_aiming = False
-    join_msg.player.is_reloading = False
+    join_msg.player.is_sprinting = ps.is_sprinting
+    join_msg.player.is_aiming = ps.is_aiming
+    join_msg.player.is_reloading = ps.is_reloading
 
     broadcasts.append((MsgId.SC_PLAYER_JOIN, join_msg.SerializeToString(), session))
 
@@ -217,8 +168,35 @@ def handle_select_character(server, session, data):
 
 
 def handle_reconnect_ack(server, session, data):
-    """处理重连确认"""
-    # 什么都不做，只是确认客户端已经收到重连消息
+    """处理重连确认（已废弃，保留空实现）"""
+    return []
+
+
+def handle_delete_character(server, session, data):
+    """处理删除角色"""
+    msg = tps_pb2.CsDeleteCharacter()
+    msg.ParseFromString(data)
+
+    result = tps_pb2.ScDeleteResult()
+    result.char_id = msg.char_id
+
+    if not session.account:
+        result.success = False
+        result.msg = "未登录"
+    else:
+        ok = server.db.delete_character(msg.char_id, session.account)
+        if ok:
+            result.success = True
+            result.msg = "删除成功"
+            print(f"[DB] Character {msg.char_id} deleted by {session.account}")
+            # 如果删的是当前选中的角色，清空选中
+            if session.player_state and session.player_state.get("char_id") == msg.char_id:
+                session.player_state = None
+        else:
+            result.success = False
+            result.msg = "角色不存在或不属于该账号"
+
+    session.send_msg(MsgId.SC_DELETE_RESULT, result.SerializeToString())
     return []
 
 
@@ -383,6 +361,7 @@ HANDLERS = {
     MsgId.CS_CREATE_CHAR: handle_create_character,
     MsgId.CS_SELECT_CHAR: handle_select_character,
     MsgId.CS_RECONNECT_ACK: handle_reconnect_ack,
+    MsgId.CS_DELETE_CHAR: handle_delete_character,
     MsgId.CS_MOVE: handle_move,
     MsgId.CS_SKILL: handle_skill,
     MsgId.CS_PICKUP: handle_pickup,
