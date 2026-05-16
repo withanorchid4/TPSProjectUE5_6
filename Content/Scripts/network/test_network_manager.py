@@ -172,14 +172,9 @@ def test_network_manager_flow():
     c.drain()
     print(f"  Move sent: (100, 200, 50) yaw=45")
 
-    # Step 7: 发送射击（模拟 ShootingComponent._send_shoot_to_server）
+    # Step 7: 发送射击（只传武器类型）
     print("\n[7] Send shoot...")
     msg = tps_pb2.CsShoot()
-    msg.start_location.x = 100
-    msg.start_location.y = 200
-    msg.start_location.z = 50
-    msg.direction.yaw = 45
-    msg.direction.pitch = -5
     msg.weapon_type = 0
     c.send(tps_pb2.CS_SHOOT, msg.SerializeToString())
     time.sleep(0.1)
@@ -210,10 +205,6 @@ def test_network_manager_flow():
     # Step 10: 发送魔法箭射击
     print("\n[10] Send magic arrow shoot...")
     msg = tps_pb2.CsShoot()
-    msg.start_location.x = 100
-    msg.start_location.y = 200
-    msg.start_location.z = 50
-    msg.direction.yaw = 90
     msg.weapon_type = 1
     c.send(tps_pb2.CS_SHOOT, msg.SerializeToString())
     time.sleep(0.1)

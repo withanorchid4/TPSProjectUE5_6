@@ -66,6 +66,8 @@ message PlayerState {
   bool     is_reloading   = 9;
   bool     is_weapon_drawn = 10;
   bool     is_in_air      = 11;
+  float    vel_x          = 12;
+  float    vel_z          = 13;
 }
 
 message EnemyState {
@@ -155,6 +157,8 @@ message CsMove {
   bool    is_sprinting   = 3;
   bool    is_weapon_drawn = 4;
   bool    is_in_air      = 5;
+  float   vel_x          = 6;
+  float   vel_z          = 7;
 }
 
 message ScPlayerStates {
@@ -184,16 +188,14 @@ message ScPickupResult {
 }
 
 message CsShoot {
-  Vector3 start_location = 1;
-  Rotator direction      = 2;
-  int32   weapon_type    = 3;  // 0=普通, 1=魔法箭
+  int32   weapon_type    = 1;  // 0=普通, 1=魔法箭
+  Vector3 hit_location   = 2;  // 命中点世界坐标
 }
 
 message ScShootResult {
   int32   player_id      = 1;
-  Vector3 start_location = 2;
-  Rotator direction      = 3;
-  int32   weapon_type    = 4;
+  int32   weapon_type    = 2;
+  Vector3 hit_location   = 3;  // 命中点世界坐标
 }
 
 // ============ 系统 ============

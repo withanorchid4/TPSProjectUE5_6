@@ -185,10 +185,6 @@ def test_net_client_e2e():
     # ─── Step 7: 射击 ───
     print("\n[7] Send CsShoot")
     msg = tps_pb2.CsShoot()
-    msg.start_location.x = 100
-    msg.start_location.y = 200
-    msg.start_location.z = 300
-    msg.direction.yaw = 45
     msg.weapon_type = 0
     c.send(tps_pb2.CS_SHOOT, msg.SerializeToString())
 

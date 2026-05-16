@@ -97,7 +97,7 @@ def decode_and_print(msg_id, data):
         sr = tps_pb2.ScShootResult()
         sr.ParseFromString(data)
         wt = "magic_arrow" if sr.weapon_type == 1 else "gun"
-        print(f"  >>> ScShootResult: player={sr.player_id} weapon={wt} from=({sr.start_location.x:.0f},{sr.start_location.y:.0f},{sr.start_location.z:.0f}) yaw={sr.direction.yaw:.0f}")
+        print(f"  >>> ScShootResult: player={sr.player_id} weapon={wt}")
 
     elif msg_id == tps_pb2.SC_ACTION:
         sa = tps_pb2.ScAction()

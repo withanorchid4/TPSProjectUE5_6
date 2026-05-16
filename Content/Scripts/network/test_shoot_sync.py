@@ -1,7 +1,8 @@
 # -*- encoding: utf-8 -*-
-"""射箭同步测试
+"""射击同步测试
 
-场景：A 射箭 → 验证 B 能收到 ScShootResult（起始位置、方向、武器类型一致）
+场景：A 射击 → 验证 B 能收到 ScShootResult（player_id + weapon_type 一致）
+射击只传事件，接收方自行用本地位置/朝向模拟特效。
 """
 
 import socket
@@ -121,7 +122,7 @@ def full_login(c, account, char_name):
 
 def test_shoot_sync():
     print("=" * 60)
-    print("射箭同步测试：A 射箭 → B 能否看到")
+    print("射击同步测试：A 射击 → B 能否收到开火事件")
     print("=" * 60)
 
     ts = str(int(time.time() * 1000))[-6:]
@@ -138,32 +139,15 @@ def test_shoot_sync():
     cB.drain()
     cA.drain()
 
-    # ─── A 移动到射箭位置 ───
-    print("\n[2] A 移动到 (100, 200, 50)，面朝 yaw=45°")
-    move = tps_pb2.CsMove()
-    move.location.x = 100
-    move.location.y = 200
-    move.location.z = 50
-    move.rotation.yaw = 45
-    cA.send(tps_pb2.CS_MOVE, move.SerializeToString())
-    time.sleep(0.1)
-    cB.drain()
-    cA.drain()
-
-    # ─── A 射箭（普通箭）───
-    print("\n[3] A 射出普通箭 weapon_type=0")
+    # ─── A 射击（普通枪）───
+    print("\n[2] A 射击 weapon_type=0")
     shoot = tps_pb2.CsShoot()
-    shoot.start_location.x = 100
-    shoot.start_location.y = 200
-    shoot.start_location.z = 50
-    shoot.direction.yaw = 45
-    shoot.direction.pitch = -5
     shoot.weapon_type = 0
     cA.send(tps_pb2.CS_SHOOT, shoot.SerializeToString())
 
     time.sleep(0.15)
     bcsB = cB.drain()
-    bcsA = cA.drain()
+    cA.drain()
 
     # 找 B 收到的 ScShootResult
     shoot_results_B = []
@@ -177,28 +161,16 @@ def test_shoot_sync():
     sr = shoot_results_B[0]
 
     print(f"  B 收到 ScShootResult:")
-    print(f"    player_id     = {sr.player_id}  (expect {pidA})")
-    print(f"    start_location= ({sr.start_location.x}, {sr.start_location.y}, {sr.start_location.z})")
-    print(f"    direction     = pitch={sr.direction.pitch}, yaw={sr.direction.yaw}, roll={sr.direction.roll}")
-    print(f"    weapon_type   = {sr.weapon_type}  (0=普通箭)")
+    print(f"    player_id   = {sr.player_id}  (expect {pidA})")
+    print(f"    weapon_type = {sr.weapon_type}  (0=普通枪)")
 
     assert sr.player_id == pidA, f"Shooter should be A({pidA}), got {sr.player_id}"
-    assert sr.start_location.x == 100, f"start_location.x should be 100, got {sr.start_location.x}"
-    assert sr.start_location.y == 200, f"start_location.y should be 200, got {sr.start_location.y}"
-    assert sr.start_location.z == 50, f"start_location.z should be 50, got {sr.start_location.z}"
-    assert sr.direction.yaw == 45, f"direction.yaw should be 45, got {sr.direction.yaw}"
-    assert sr.direction.pitch == -5, f"direction.pitch should be -5, got {sr.direction.pitch}"
     assert sr.weapon_type == 0, f"weapon_type should be 0, got {sr.weapon_type}"
-    print("  ✅ B 正确收到 A 的普通箭射击信息")
+    print("  ✅ B 正确收到 A 的射击事件")
 
     # ─── A 射魔法箭 ───
-    print("\n[4] A 射出魔法箭 weapon_type=1")
+    print("\n[3] A 射出魔法箭 weapon_type=1")
     shoot2 = tps_pb2.CsShoot()
-    shoot2.start_location.x = 100
-    shoot2.start_location.y = 200
-    shoot2.start_location.z = 50
-    shoot2.direction.yaw = 90
-    shoot2.direction.pitch = 0
     shoot2.weapon_type = 1
     cA.send(tps_pb2.CS_SHOOT, shoot2.SerializeToString())
 
@@ -216,21 +188,15 @@ def test_shoot_sync():
     sr2 = magic_results[0]
     print(f"  B 收到魔法箭 ScShootResult:")
     print(f"    player_id   = {sr2.player_id}")
-    print(f"    direction   = yaw={sr2.direction.yaw}")
     print(f"    weapon_type = {sr2.weapon_type}  (1=魔法箭)")
 
     assert sr2.weapon_type == 1, f"weapon_type should be 1(魔法箭), got {sr2.weapon_type}"
-    assert sr2.direction.yaw == 90, f"direction.yaw should be 90, got {sr2.direction.yaw}"
-    print("  ✅ B 正确收到 A 的魔法箭射击信息")
+    print("  ✅ B 正确收到 A 的魔法箭射击事件")
 
-    # ─── A 连射3箭 ───
-    print("\n[5] A 连射 3 箭，验证 B 全部收到")
+    # ─── A 连射3发 ───
+    print("\n[4] A 连射 3 发，验证 B 全部收到")
     for i in range(3):
         shoot3 = tps_pb2.CsShoot()
-        shoot3.start_location.x = 100 + i * 10
-        shoot3.start_location.y = 200
-        shoot3.start_location.z = 50
-        shoot3.direction.yaw = 30 + i * 15
         shoot3.weapon_type = 0
         cA.send(tps_pb2.CS_SHOOT, shoot3.SerializeToString())
 
@@ -246,13 +212,13 @@ def test_shoot_sync():
 
     print(f"  B 收到 {len(rapid_results)} 个 ScShootResult")
     for i, sr3 in enumerate(rapid_results):
-        print(f"    [{i}] player={sr3.player_id} start_x={sr3.start_location.x} yaw={sr3.direction.yaw}")
+        print(f"    [{i}] player={sr3.player_id} weapon={sr3.weapon_type}")
 
     assert len(rapid_results) == 3, f"B should receive 3 shoot results, got {len(rapid_results)}"
     for i, sr3 in enumerate(rapid_results):
-        assert sr3.start_location.x == 100 + i * 10, f"Arrow {i}: start_x should be {100 + i * 10}"
-        assert sr3.direction.yaw == 30 + i * 15, f"Arrow {i}: yaw should be {30 + i * 15}"
-    print("  ✅ B 正确收到 A 的 3 连射信息，位置和方向完全一致")
+        assert sr3.player_id == pidA, f"Shot {i}: player should be A({pidA})"
+        assert sr3.weapon_type == 0, f"Shot {i}: weapon_type should be 0"
+    print("  ✅ B 正确收到 A 的 3 连射事件")
 
     # ─── Cleanup ───
     cA.drain()
@@ -261,7 +227,7 @@ def test_shoot_sync():
     cB.close()
 
     print("\n" + "=" * 60)
-    print("射箭同步测试全部通过！✅")
+    print("射击同步测试全部通过！✅")
     print("=" * 60)
 
 

@@ -307,22 +307,18 @@ def handle_pickup(server, session, data):
 
 
 def handle_shoot(server, session, data):
-    """处理射击"""
+    """处理射击 — 转发开火事件 + 命中点，接收方自行模拟特效"""
     msg = tps_pb2.CsShoot()
     msg.ParseFromString(data)
 
     pid = session.player_state.get("player_id") if session.player_state else 0
 
-    # 广播射击结果
     result = tps_pb2.ScShootResult()
     result.player_id = pid
-    result.start_location.x = msg.start_location.x
-    result.start_location.y = msg.start_location.y
-    result.start_location.z = msg.start_location.z
-    result.direction.pitch = msg.direction.pitch
-    result.direction.yaw = msg.direction.yaw
-    result.direction.roll = msg.direction.roll
     result.weapon_type = msg.weapon_type
+    result.hit_location.x = msg.hit_location.x
+    result.hit_location.y = msg.hit_location.y
+    result.hit_location.z = msg.hit_location.z
 
     return [(MsgId.SC_SHOOT_RESULT, result.SerializeToString(), None)]
 

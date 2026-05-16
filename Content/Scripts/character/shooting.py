@@ -192,8 +192,8 @@ class ShootingComponent:
         self.current_ammo -= 1
         ue.Log(f"ShootingComponent: Shot fired (ammo={self.current_ammo}/{self.MAX_AMMO})")
         
-        # 网络同步：发送射击信息
-        self._send_shoot_to_server(muzzle_location, fire_rotation)
+        # 网络同步：发送射击事件（含命中点）
+        self._send_shoot_to_server(hit_location=hit_location)
         
         return True
     
@@ -255,8 +255,8 @@ class ShootingComponent:
             arrow.SetOwner(self.owner)
             ue.LogWarning("ShootingComponent: Magic arrow fired!")
             
-            # 网络同步：发送魔法箭射击信息
-            self._send_shoot_to_server(spawn_location, fire_rotation, weapon_type=1)
+            # 网络同步：发送魔法箭射击事件
+            self._send_shoot_to_server(weapon_type=1)
         else:
             ue.LogWarning("ShootingComponent: Failed to spawn magic arrow!")
     
@@ -310,17 +310,20 @@ class ShootingComponent:
     
     # ─── 网络同步 ───
 
-    def _send_shoot_to_server(self, start_location, fire_rotation, weapon_type=0):
-        """发送射击信息到服务器"""
+    def _send_shoot_to_server(self, hit_location=None, weapon_type=0):
+        """发送射击事件到服务器"""
         try:
             from network.network_manager import NetworkManager
             nm = NetworkManager.get_instance()
             if nm.is_in_game:
-                nm.send_shoot(
-                    {"x": start_location.x, "y": start_location.y, "z": start_location.z},
-                    {"pitch": fire_rotation.pitch, "yaw": fire_rotation.yaw, "roll": fire_rotation.roll},
-                    weapon_type=weapon_type
-                )
+                hit_dict = None
+                if hit_location:
+                    hit_dict = {
+                        "x": hit_location.x,
+                        "y": hit_location.y,
+                        "z": hit_location.z,
+                    }
+                nm.send_shoot(hit_location=hit_dict, weapon_type=weapon_type)
         except Exception as e:
             ue.LogError(f"ShootingComponent: send_shoot failed: {e}")
     

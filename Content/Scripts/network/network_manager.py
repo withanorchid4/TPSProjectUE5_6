@@ -9,7 +9,7 @@ BaseCharacter 通过 NetworkManager 接入网络，无需关心底层协议。
     nm = NetworkManager.get_instance()
     nm.connect_and_login()  # 自动连接+登录+创角+进游戏
     nm.send_move(loc, rot, is_sprinting)
-    nm.send_shoot(start_loc, direction, weapon_type)
+    nm.send_shoot(hit_location, weapon_type)
 """
 
 import ue
@@ -264,19 +264,22 @@ class NetworkManager:
             self._send_count = 0
             self._send_count_time = now
 
-    def send_shoot(self, start_location, direction, weapon_type=0):
-        """发送射击同步"""
+    def send_shoot(self, hit_location=None, weapon_type=0):
+        """发送射击同步 — 传武器类型 + 命中点，接收方自行模拟"""
         if not self.is_in_game:
             return
 
         msg = tps_pb2.CsShoot()
-        msg.start_location.x = start_location.get("x", 0.0) if isinstance(start_location, dict) else float(start_location.x)
-        msg.start_location.y = start_location.get("y", 0.0) if isinstance(start_location, dict) else float(start_location.y)
-        msg.start_location.z = start_location.get("z", 0.0) if isinstance(start_location, dict) else float(start_location.z)
-        msg.direction.pitch = direction.get("pitch", 0.0) if isinstance(direction, dict) else float(direction.pitch)
-        msg.direction.yaw = direction.get("yaw", 0.0) if isinstance(direction, dict) else float(direction.yaw)
-        msg.direction.roll = direction.get("roll", 0.0) if isinstance(direction, dict) else float(direction.roll)
         msg.weapon_type = weapon_type
+        if hit_location:
+            if isinstance(hit_location, dict):
+                msg.hit_location.x = hit_location.get("x", 0.0)
+                msg.hit_location.y = hit_location.get("y", 0.0)
+                msg.hit_location.z = hit_location.get("z", 0.0)
+            else:
+                msg.hit_location.x = float(hit_location.x)
+                msg.hit_location.y = float(hit_location.y)
+                msg.hit_location.z = float(hit_location.z)
 
         self._client.send_msg(tps_pb2.CS_SHOOT, msg.SerializeToString())
 
@@ -539,7 +542,7 @@ class NetworkManager:
                 ue.LogError(f"NetworkManager: on_player_leave callback error: {e}")
 
     def _on_shoot_result(self, msg_id, data):
-        """处理射击结果广播"""
+        """处理射击结果广播 — player_id + weapon_type + hit_location"""
         result = tps_pb2.ScShootResult()
         result.ParseFromString(data)
 
@@ -549,9 +552,12 @@ class NetworkManager:
 
         shoot_dict = {
             "player_id": result.player_id,
-            "start_location": {"x": result.start_location.x, "y": result.start_location.y, "z": result.start_location.z},
-            "direction": {"pitch": result.direction.pitch, "yaw": result.direction.yaw, "roll": result.direction.roll},
             "weapon_type": result.weapon_type,
+            "hit_location": {
+                "x": result.hit_location.x,
+                "y": result.hit_location.y,
+                "z": result.hit_location.z,
+            },
         }
 
         if self.on_shoot_result:

@@ -517,9 +517,10 @@ class BaseCharacter(ue.Character):
         """网络：收到远程玩家射击，在远程玩家位置生成弹道特效"""
         pid = shoot_dict.get("player_id", "?")
         weapon = shoot_dict.get("weapon_type", 0)
+        hit_loc = shoot_dict.get("hit_location")
         rp = self._remote_players.get(pid)
         if rp and not rp._destroyed:
-            rp.play_shoot(weapon)
+            rp.play_shoot(weapon, hit_location=hit_loc)
         else:
             ue.Log(f"BaseCharacter: Remote player {pid} shot but no actor found")
 

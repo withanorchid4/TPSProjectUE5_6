@@ -286,8 +286,8 @@ class RemotePlayer(ue.Character):
         except Exception as e:
             ue.LogWarning(f"RemotePlayer: _update_anim_vars error: {e}")
 
-    def play_shoot(self, weapon_type=0):
-        """远程玩家射击：生成弹道特效"""
+    def play_shoot(self, weapon_type=0, hit_location=None):
+        """远程玩家射击：用本地枪口 + 网络命中点 渲染特效"""
         if self._destroyed:
             return
 
@@ -295,41 +295,72 @@ class RemotePlayer(ue.Character):
         if not mesh:
             return
 
-        actor_loc = self.GetActorLocation()
+        world = self.GetWorld()
+        if not world:
+            return
+
         actor_rot = self.GetActorRotation()
         forward = ue.KismetMathLibrary.GetForwardVector(actor_rot)
 
         if weapon_type == 0:
+            # 枪口位置：用远程玩家自己的 hand_r socket + 前方偏移
             hand_loc = mesh.GetSocketLocation(ue.Name("hand_r"))
             muzzle_loc = hand_loc + forward * 30.0
-            target_loc = actor_loc + forward * 3000.0
 
+            # 命中点：来自网络广播，缺省则用前方远处
+            if hit_location:
+                target_loc = ue.Vector(hit_location["x"], hit_location["y"], hit_location["z"])
+            else:
+                target_loc = muzzle_loc + forward * 3000.0
+
+            # 枪口火花特效
+            particle = ue.LoadObject(ue.ParticleSystem, "/Game/StarterContent/Particles/P_Explosion.P_Explosion")
+            if particle:
+                ue.GameplayStatics.SpawnEmitterAtLocation(
+                    world, particle, muzzle_loc,
+                    ue.Rotator(0.0, 0.0, 0.0),
+                    ue.Vector(0.2, 0.2, 0.2),
+                    True
+                )
+
+            # 命中点爆炸特效
+            if hit_location and particle:
+                ue.GameplayStatics.SpawnEmitterAtLocation(
+                    world, particle, target_loc,
+                    ue.Rotator(0.0, 0.0, 0.0),
+                    ue.Vector(0.3, 0.3, 0.3),
+                    True
+                )
+
+            # 射击音效
+            sound = ue.LoadObject(ue.SoundBase, "/Game/StarterContent/Audio/Fire01_Cue.Fire01_Cue")
+            if sound:
+                ue.GameplayStatics.PlaySoundAtLocation(
+                    world, sound, muzzle_loc,
+                    ue.Rotator(0.0, 0.0, 0.0),
+                    0.6, 1.0, 0.0
+                )
+
+            # 视觉弹道：枪口 → 命中点
             from character.tracer_round import TracerRound
-            world = self.GetWorld()
-            if world:
-                tracer_dir = target_loc - muzzle_loc
-                tracer_rot = ue.KismetMathLibrary.MakeRotFromX(tracer_dir)
-                tracer = world.SpawnActor(TracerRound, muzzle_loc, tracer_rot)
-                if tracer:
-                    tracer.set_target(target_loc)
-
-            try:
-                from system.audio_manager import AudioManager
-                AudioManager.play_sound_at(muzzle_loc, "/Game/Sounds/Gunshot")
-            except Exception:
-                pass
+            tracer_dir = target_loc - muzzle_loc
+            tracer_rot = ue.KismetMathLibrary.MakeRotFromX(tracer_dir)
+            tracer = world.SpawnActor(TracerRound, muzzle_loc, tracer_rot)
+            if tracer:
+                tracer.set_target(target_loc)
         else:
             hand_loc = mesh.GetSocketLocation(ue.Name("hand_r"))
             spawn_loc = hand_loc + forward * 30.0
 
             from character.magic_arrow import MagicArrow
-            world = self.GetWorld()
-            if world:
-                arrow = world.SpawnActor(MagicArrow, spawn_loc, actor_rot)
-                if arrow:
-                    target_loc = actor_loc + forward * 5000.0
-                    if hasattr(arrow, 'set_target'):
-                        arrow.set_target(target_loc)
+            arrow = world.SpawnActor(MagicArrow, spawn_loc, actor_rot)
+            if arrow:
+                if hit_location:
+                    target_loc = ue.Vector(hit_location["x"], hit_location["y"], hit_location["z"])
+                else:
+                    target_loc = spawn_loc + forward * 5000.0
+                if hasattr(arrow, 'set_target'):
+                    arrow.set_target(target_loc)
 
     def do_cleanup(self):
         """清理并销毁自身"""

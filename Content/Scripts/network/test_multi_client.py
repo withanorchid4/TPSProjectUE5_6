@@ -249,10 +249,6 @@ def test_multi_client():
     # ─── A 射击，B 是否收到 ───
     print(f"\n[5] A shoots")
     msg = tps_pb2.CsShoot()
-    msg.start_location.x = 500
-    msg.start_location.y = 600
-    msg.start_location.z = 100
-    msg.direction.yaw = 90
     msg.weapon_type = 0
     cA.send(tps_pb2.CS_SHOOT, msg.SerializeToString())
 

@@ -64,6 +64,8 @@ class TracerRound(ue.Actor, TickableMixin):
         cylinder = ue.LoadObject(ue.StaticMesh, "/Engine/BasicShapes/Cylinder.Cylinder")
         if cylinder:
             self.tracer_mesh.SetStaticMesh(cylinder)
+        else:
+            ue.LogWarning("[TRACER] Cylinder mesh not found!")
 
         self.tracer_mesh.SetWorldScale3D(ue.Vector(
             self.TRACER_SCALE_XY,
