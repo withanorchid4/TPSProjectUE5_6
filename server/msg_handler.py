@@ -319,6 +319,7 @@ def handle_shoot(server, session, data):
     result.hit_location.x = msg.hit_location.x
     result.hit_location.y = msg.hit_location.y
     result.hit_location.z = msg.hit_location.z
+    result.arrow_id = msg.arrow_id
 
     return [(MsgId.SC_SHOOT_RESULT, result.SerializeToString(), None)]
 
@@ -387,6 +388,23 @@ def handle_game_result(server, session, data):
     return [(MsgId.SC_GAME_RESULT, result.SerializeToString(), None)]
 
 
+def handle_magic_arrow_hit(server, session, data):
+    """处理魔法箭命中 — 广播给其他玩家"""
+    msg = tps_pb2.CsMagicArrowHit()
+    msg.ParseFromString(data)
+
+    pid = session.player_state.get("player_id") if session.player_state else 0
+
+    result = tps_pb2.ScMagicArrowHitResult()
+    result.player_id = pid
+    result.arrow_id = msg.arrow_id
+    result.aoe_location.x = msg.aoe_location.x
+    result.aoe_location.y = msg.aoe_location.y
+    result.aoe_location.z = msg.aoe_location.z
+
+    return [(MsgId.SC_MAGIC_ARROW_HIT, result.SerializeToString(), None)]
+
+
 # 消息分发表
 HANDLERS = {
     MsgId.CS_LOGIN: handle_login,
@@ -402,4 +420,5 @@ HANDLERS = {
     MsgId.CS_ENEMY_EVENT: handle_enemy_event,
     MsgId.CS_ACTION: handle_action,
     MsgId.CS_GAME_RESULT: handle_game_result,
+    MsgId.CS_MAGIC_ARROW_HIT: handle_magic_arrow_hit,
 }

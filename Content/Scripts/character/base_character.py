@@ -134,6 +134,7 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_player_join = self._on_net_player_join
             self._net_manager.on_player_leave = self._on_net_player_leave
             self._net_manager.on_action = self._on_net_action
+            self._net_manager.on_magic_arrow_hit = self._on_net_magic_arrow_hit
 
             # 连接并自动登录
             if not self._net_manager.is_in_game:
@@ -518,9 +519,10 @@ class BaseCharacter(ue.Character):
         pid = shoot_dict.get("player_id", "?")
         weapon = shoot_dict.get("weapon_type", 0)
         hit_loc = shoot_dict.get("hit_location")
+        arrow_id = shoot_dict.get("arrow_id", 0)
         rp = self._remote_players.get(pid)
         if rp and not rp._destroyed:
-            rp.play_shoot(weapon, hit_location=hit_loc)
+            rp.play_shoot(weapon, hit_location=hit_loc, arrow_id=arrow_id)
         else:
             ue.Log(f"BaseCharacter: Remote player {pid} shot but no actor found")
 
@@ -604,6 +606,46 @@ class BaseCharacter(ue.Character):
         except Exception:
             pass
 
+    def _on_net_magic_arrow_hit(self, hit_dict):
+        """网络：收到魔法箭命中广播 — 销毁视觉箭 + 播放 AOE 特效+音效"""
+        pid = hit_dict.get("player_id", "?")
+        arrow_id = hit_dict.get("arrow_id", 0)
+        aoe_loc = hit_dict.get("aoe_location")
+
+        # 销毁远程玩家的视觉箭
+        rp = self._remote_players.get(pid)
+        if rp and not rp._destroyed and arrow_id > 0:
+            rp.destroy_arrow(arrow_id)
+
+        # 在 AOE 位置播放特效 + 音效
+        if aoe_loc:
+            aoe_location = ue.Vector(aoe_loc["x"], aoe_loc["y"], aoe_loc["z"])
+            self._play_remote_magic_aoe(aoe_location)
+
+    def _play_remote_magic_aoe(self, location):
+        """在指定位置播放远程魔法箭 AOE 特效 + 音效"""
+        world = self.GetWorld()
+        if not world:
+            return
+
+        # AOE Niagara 特效
+        aoe_system = ue.LoadObject(
+            ue.NiagaraSystem,
+            "/Game/Basic_VFX/Niagara/NS_Basic_6.NS_Basic_6"
+        )
+        if aoe_system:
+            aoe_comp = ue.NewObject(ue.NiagaraComponent, self, "RemoteAOE")
+            aoe_comp.RegisterComponent()
+            aoe_comp.SetAsset(aoe_system)
+            aoe_comp.SetWorldLocationAndRotation(location, ue.Rotator(0, 0, 0), False, False)
+            aoe_comp.bAutoDestroy = True
+            aoe_comp.Activate(True)
+            aoe_comp.SeekToDesiredAge(0.5)
+
+        # 3D 音效
+        if hasattr(self, 'audio') and self.audio:
+            self.audio.play_magic_arrow(location)
+
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
@@ -622,5 +664,6 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_player_join = None
             self._net_manager.on_player_leave = None
             self._net_manager.on_action = None
+            self._net_manager.on_magic_arrow_hit = None
             self._net_manager = None
         ue.Log(f"{self} ReceiveEndPlay")

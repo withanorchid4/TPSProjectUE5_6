@@ -67,6 +67,7 @@ class NetworkManager:
         self.on_shoot_result = None     # → callback(shoot_dict)
         self.on_action = None           # → callback(action_dict)
         self.on_enemy_event = None      # → callback(event_dict)
+        self.on_magic_arrow_hit = None  # → callback(hit_dict)
         self.on_disconnect = None       # → callback()
 
         # 回调：UI 登录流程（仅 UI 模式使用）
@@ -88,6 +89,7 @@ class NetworkManager:
         self._client.register_callback(tps_pb2.SC_SHOOT_RESULT, self._on_shoot_result)
         self._client.register_callback(tps_pb2.SC_ACTION, self._on_action)
         self._client.register_callback(tps_pb2.SC_ENEMY_EVENT, self._on_enemy_event)
+        self._client.register_callback(tps_pb2.SC_MAGIC_ARROW_HIT, self._on_magic_arrow_hit)
         self._client.set_disconnect_callback(self._on_server_disconnect)
 
     # ─── 单例 ───
@@ -264,13 +266,14 @@ class NetworkManager:
             self._send_count = 0
             self._send_count_time = now
 
-    def send_shoot(self, hit_location=None, weapon_type=0):
-        """发送射击同步 — 传武器类型 + 命中点，接收方自行模拟"""
+    def send_shoot(self, hit_location=None, weapon_type=0, arrow_id=0):
+        """发送射击同步 — 传武器类型 + 命中点 + 箭矢ID"""
         if not self.is_in_game:
             return
 
         msg = tps_pb2.CsShoot()
         msg.weapon_type = weapon_type
+        msg.arrow_id = arrow_id
         if hit_location:
             if isinstance(hit_location, dict):
                 msg.hit_location.x = hit_location.get("x", 0.0)
@@ -291,6 +294,24 @@ class NetworkManager:
         msg = tps_pb2.CsAction()
         msg.action_type = action_type
         self._client.send_msg(tps_pb2.CS_ACTION, msg.SerializeToString())
+
+    def send_magic_arrow_hit(self, arrow_id, aoe_location):
+        """发送魔法箭命中事件"""
+        if not self.is_in_game:
+            return
+
+        msg = tps_pb2.CsMagicArrowHit()
+        msg.arrow_id = arrow_id
+        if isinstance(aoe_location, dict):
+            msg.aoe_location.x = aoe_location.get("x", 0.0)
+            msg.aoe_location.y = aoe_location.get("y", 0.0)
+            msg.aoe_location.z = aoe_location.get("z", 0.0)
+        else:
+            msg.aoe_location.x = float(aoe_location.x)
+            msg.aoe_location.y = float(aoe_location.y)
+            msg.aoe_location.z = float(aoe_location.z)
+
+        self._client.send_msg(tps_pb2.CS_MAGIC_ARROW_HIT, msg.SerializeToString())
 
     # ─── 登录流程（内部） ───
 
@@ -542,7 +563,7 @@ class NetworkManager:
                 ue.LogError(f"NetworkManager: on_player_leave callback error: {e}")
 
     def _on_shoot_result(self, msg_id, data):
-        """处理射击结果广播 — player_id + weapon_type + hit_location"""
+        """处理射击结果广播 — player_id + weapon_type + hit_location + arrow_id"""
         result = tps_pb2.ScShootResult()
         result.ParseFromString(data)
 
@@ -558,6 +579,7 @@ class NetworkManager:
                 "y": result.hit_location.y,
                 "z": result.hit_location.z,
             },
+            "arrow_id": result.arrow_id,
         }
 
         if self.on_shoot_result:
@@ -602,6 +624,27 @@ class NetworkManager:
                 self.on_enemy_event(event_dict)
             except Exception as e:
                 ue.LogError(f"NetworkManager: on_enemy_event callback error: {e}")
+
+    def _on_magic_arrow_hit(self, msg_id, data):
+        """处理魔法箭命中广播"""
+        result = tps_pb2.ScMagicArrowHitResult()
+        result.ParseFromString(data)
+
+        hit_dict = {
+            "player_id": result.player_id,
+            "arrow_id": result.arrow_id,
+            "aoe_location": {
+                "x": result.aoe_location.x,
+                "y": result.aoe_location.y,
+                "z": result.aoe_location.z,
+            },
+        }
+
+        if self.on_magic_arrow_hit:
+            try:
+                self.on_magic_arrow_hit(hit_dict)
+            except Exception as e:
+                ue.LogError(f"NetworkManager: on_magic_arrow_hit callback error: {e}")
 
     def _on_server_disconnect(self):
         """服务端断开连接"""

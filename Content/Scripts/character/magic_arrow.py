@@ -32,6 +32,8 @@ class MagicArrow(ue.Actor, TickableMixin):
         self._spawn_location = None
         self._ticker_handle = None
         self._collision_activated = False
+        self._visual_only = False   # 纯视觉模式：禁用碰撞和命中逻辑
+        self.arrow_id = 0           # 由 ShootingComponent 在发射时分配
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -65,8 +67,12 @@ class MagicArrow(ue.Actor, TickableMixin):
         self.collision_sphere.SetSphereRadius(self.COLLISION_RADIUS)
         self.collision_sphere.SetCollisionProfileName(ue.Name("BlockAll"))
         self.collision_sphere.IgnoreActorWhenMoving(self.GetOwner(), True)
-        # 出身时禁用碰撞，避免撞到玩家自身，on_tick 中延迟开启
-        self.collision_sphere.SetCollisionEnabled(0)
+        # 纯视觉模式直接禁用碰撞，否则延迟0.05秒后开启
+        if self._visual_only:
+            self.collision_sphere.SetCollisionEnabled(0)
+            self._collision_activated = True
+        else:
+            self.collision_sphere.SetCollisionEnabled(0)
         self.SetRootComponent(self.collision_sphere)
     
     def _setup_visual(self):
@@ -186,8 +192,24 @@ class MagicArrow(ue.Actor, TickableMixin):
         
         ue.LogWarning(f"MagicArrow: Stunned {stunned_count} enemies in radius {self.STUN_RADIUS}")
     
+    def _send_hit_to_server(self):
+        """发送魔法箭命中事件到服务器"""
+        if self._visual_only or self.arrow_id == 0:
+            return
+        try:
+            from network.network_manager import NetworkManager
+            nm = NetworkManager.get_instance()
+            if nm.is_in_game:
+                aoe_loc = self.GetActorLocation()
+                nm.send_magic_arrow_hit(
+                    arrow_id=self.arrow_id,
+                    aoe_location={"x": aoe_loc.x, "y": aoe_loc.y, "z": aoe_loc.z}
+                )
+        except Exception as e:
+            ue.LogError(f"MagicArrow: send_hit failed: {e}")
+    
     def _on_overlap(self, overlapped_actor, other_actor):
-        if not other_actor:
+        if not other_actor or self._visual_only:
             return
         # ue.LogWarning(f"MagicArrow: _on_overlap other={other_actor}")
         # 忽略 owner
@@ -201,13 +223,16 @@ class MagicArrow(ue.Actor, TickableMixin):
             owner.audio.play_magic_arrow(self.GetActorLocation())
         
         # 命中任何东西 → 播放AOE特效 + 晕眩范围内敌人
-        # ue.LogWarning(f"MagicArrow: overlap hit! spawning AOE + stun")
         self._spawn_aoe_effect()
         self._stun_nearby_enemies()
+        
+        # 网络同步：广播魔法箭命中事件
+        self._send_hit_to_server()
+        
         self._start_destroy()
     
     def _on_hit(self, self_actor, other_actor, normal_impulse, hit_result):
-        if not other_actor:
+        if not other_actor or self._visual_only:
             return
         # ue.LogWarning(f"MagicArrow: _on_hit other={other_actor}")
         if other_actor == self.GetOwner():
@@ -222,6 +247,10 @@ class MagicArrow(ue.Actor, TickableMixin):
         # ue.LogWarning(f"MagicArrow: hit! spawning AOE + stun")
         self._spawn_aoe_effect()
         self._stun_nearby_enemies()
+        
+        # 网络同步：广播魔法箭命中事件
+        self._send_hit_to_server()
+        
         self._start_destroy()
     
     def _start_destroy(self):
@@ -240,7 +269,8 @@ class MagicArrow(ue.Actor, TickableMixin):
     def on_tick(self, delta_time):
         """每帧更新（替代 ReceiveTick）"""
         # 延迟开启碰撞（0.05秒后），避免出生时撞到玩家自身
-        if not self._collision_activated:
+        # 纯视觉模式不开启碰撞
+        if not self._collision_activated and not self._visual_only:
             if self.GetGameTimeSinceCreation() - self.spawn_time > 0.05:
                 if self.collision_sphere:
                     self.collision_sphere.SetCollisionEnabled(3)  # QueryAndPhysics

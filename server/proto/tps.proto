@@ -32,8 +32,10 @@ enum MsgId {
   SC_ENEMY_EVENT    = 211;
   CS_ACTION         = 220;
   SC_ACTION         = 221;
-  CS_GAME_RESULT    = 230;
-  SC_GAME_RESULT    = 231;
+  CS_GAME_RESULT       = 230;
+  SC_GAME_RESULT       = 231;
+  CS_MAGIC_ARROW_HIT   = 232;
+  SC_MAGIC_ARROW_HIT   = 233;
 
   // 系统 300+
   SC_DISCONNECT     = 300;
@@ -190,12 +192,14 @@ message ScPickupResult {
 message CsShoot {
   int32   weapon_type    = 1;  // 0=普通, 1=魔法箭
   Vector3 hit_location   = 2;  // 命中点世界坐标
+  int32   arrow_id       = 3;  // 魔法箭专用ID（枪械为0）
 }
 
 message ScShootResult {
   int32   player_id      = 1;
   int32   weapon_type    = 2;
   Vector3 hit_location   = 3;  // 命中点世界坐标
+  int32   arrow_id       = 4;  // 魔法箭专用ID
 }
 
 // ============ 系统 ============
@@ -264,4 +268,16 @@ message ScGameResult {
   GameResultType result    = 2;
   int32          level     = 3;
   bool           level_up  = 4;  // 胜利时是否升级
+}
+
+// ============ 魔法箭命中 ============
+message CsMagicArrowHit {
+  int32   arrow_id      = 1;
+  Vector3 aoe_location   = 2;
+}
+
+message ScMagicArrowHitResult {
+  int32   player_id     = 1;
+  int32   arrow_id      = 2;
+  Vector3 aoe_location   = 3;
 }

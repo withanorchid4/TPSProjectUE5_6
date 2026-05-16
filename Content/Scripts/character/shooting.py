@@ -33,6 +33,9 @@ class ShootingComponent:
         # 换弹
         self._is_reloading = False
         self._reload_timer = 0.0
+        
+        # 魔法箭ID计数器
+        self._next_arrow_id = 0
     
     def _get_current_time(self) -> float:
         """获取当前游戏时间"""
@@ -253,10 +256,15 @@ class ShootingComponent:
         
         if arrow:
             arrow.SetOwner(self.owner)
-            ue.LogWarning("ShootingComponent: Magic arrow fired!")
             
-            # 网络同步：发送魔法箭射击事件
-            self._send_shoot_to_server(weapon_type=1)
+            # 分配唯一箭矢ID（per-player递增，_active_arrows是per-RemotePlayer的，无需全局唯一）
+            self._next_arrow_id += 1
+            arrow_id = self._next_arrow_id
+            arrow.arrow_id = arrow_id
+            ue.LogWarning(f"ShootingComponent: Magic arrow fired! arrow_id={arrow_id}")
+            
+            # 网络同步：发送魔法箭射击事件（含命中点+箭矢ID）
+            self._send_shoot_to_server(hit_location=target_location, weapon_type=1, arrow_id=arrow_id)
         else:
             ue.LogWarning("ShootingComponent: Failed to spawn magic arrow!")
     
@@ -310,7 +318,7 @@ class ShootingComponent:
     
     # ─── 网络同步 ───
 
-    def _send_shoot_to_server(self, hit_location=None, weapon_type=0):
+    def _send_shoot_to_server(self, hit_location=None, weapon_type=0, arrow_id=0):
         """发送射击事件到服务器"""
         try:
             from network.network_manager import NetworkManager
@@ -323,7 +331,7 @@ class ShootingComponent:
                         "y": hit_location.y,
                         "z": hit_location.z,
                     }
-                nm.send_shoot(hit_location=hit_dict, weapon_type=weapon_type)
+                nm.send_shoot(hit_location=hit_dict, weapon_type=weapon_type, arrow_id=arrow_id)
         except Exception as e:
             ue.LogError(f"ShootingComponent: send_shoot failed: {e}")
     

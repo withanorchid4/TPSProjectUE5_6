@@ -57,6 +57,9 @@ class RemotePlayer(ue.Character):
         # 首次定位标记
         self._initial_placed = False
 
+        # 追踪活跃的视觉魔法箭 {arrow_id: MagicArrow}
+        self._active_arrows = {}
+
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
         ue.Log(f"RemotePlayer: ReceiveBeginPlay (pid={self._player_id})")
@@ -286,7 +289,7 @@ class RemotePlayer(ue.Character):
         except Exception as e:
             ue.LogWarning(f"RemotePlayer: _update_anim_vars error: {e}")
 
-    def play_shoot(self, weapon_type=0, hit_location=None):
+    def play_shoot(self, weapon_type=0, hit_location=None, arrow_id=0):
         """远程玩家射击：用本地枪口 + 网络命中点 渲染特效"""
         if self._destroyed:
             return
@@ -352,21 +355,59 @@ class RemotePlayer(ue.Character):
             hand_loc = mesh.GetSocketLocation(ue.Name("hand_r"))
             spawn_loc = hand_loc + forward * 30.0
 
+            # 命中点：来自网络广播
+            if hit_location:
+                target_loc = ue.Vector(hit_location["x"], hit_location["y"], hit_location["z"])
+            else:
+                target_loc = spawn_loc + forward * 5000.0
+
+            # 方向：枪口 → 命中点
+            arrow_dir = target_loc - spawn_loc
+            arrow_rot = ue.KismetMathLibrary.MakeRotFromX(arrow_dir)
+
             from character.magic_arrow import MagicArrow
-            arrow = world.SpawnActor(MagicArrow, spawn_loc, actor_rot)
+            arrow = world.SpawnActor(MagicArrow, spawn_loc, arrow_rot)
             if arrow:
-                if hit_location:
-                    target_loc = ue.Vector(hit_location["x"], hit_location["y"], hit_location["z"])
-                else:
-                    target_loc = spawn_loc + forward * 5000.0
+                arrow._visual_only = True
+                arrow.SetOwner(self)
+                # SpawnActor 返回后立刻禁用碰撞，防止 on_tick 0.05s 后重新启用
+                if hasattr(arrow, 'collision_sphere') and arrow.collision_sphere:
+                    arrow.collision_sphere.SetCollisionEnabled(0)
+                    arrow.collision_sphere.SetCollisionProfileName(ue.Name("NoCollision"))
+                arrow._collision_activated = True
                 if hasattr(arrow, 'set_target'):
                     arrow.set_target(target_loc)
+                
+                # 记录箭矢ID，用于后续命中时销毁
+                arrow.arrow_id = arrow_id
+                if arrow_id > 0:
+                    self._active_arrows[arrow_id] = arrow
+
+    def destroy_arrow(self, arrow_id):
+        """根据 arrow_id 销毁对应的视觉魔法箭"""
+        arrow = self._active_arrows.pop(arrow_id, None)
+        if arrow:
+            try:
+                arrow._stop_ticker()
+                arrow.Destroy()
+            except Exception as e:
+                ue.LogWarning(f"RemotePlayer: destroy_arrow error: {e}")
 
     def do_cleanup(self):
         """清理并销毁自身"""
         if self._destroyed:
             return
         self._destroyed = True
+        
+        # 清理所有活跃的视觉箭
+        for aid, arrow in list(self._active_arrows.items()):
+            try:
+                arrow._stop_ticker()
+                arrow.Destroy()
+            except Exception:
+                pass
+        self._active_arrows.clear()
+        
         if self._ticker_handle is not None:
             try:
                 ue.RemoveTicker(self._ticker_handle)
