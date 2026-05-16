@@ -4,6 +4,7 @@ class GameWorld:
     def __init__(self):
         self.players = {}       # player_id -> PlayerState dict
         self._next_player_id = 1
+        self._prev_positions = {}  # player_id -> {"x","y","z","t"} 上一次位置+时间
 
     def add_player(self, session, reuse_pid=None) -> int:
         """玩家进入游戏，分配 player_id，返回 id。
@@ -35,6 +36,10 @@ class GameWorld:
                 "is_sprinting": saved.get("is_sprinting", False),
                 "is_aiming": saved.get("is_aiming", False),
                 "is_reloading": saved.get("is_reloading", False),
+                "is_weapon_drawn": saved.get("is_weapon_drawn", False),
+                "is_in_air": saved.get("is_in_air", False),
+                "vel_x": saved.get("vel_x", 0.0),
+                "vel_z": saved.get("vel_z", 0.0),
             }
         else:
             self.players[pid] = {
@@ -47,6 +52,10 @@ class GameWorld:
                 "is_sprinting": False,
                 "is_aiming": False,
                 "is_reloading": False,
+                "is_weapon_drawn": False,
+                "is_in_air": False,
+                "vel_x": 0.0,
+                "vel_z": 0.0,
             }
 
         # 更新 session 的 player_state
@@ -59,15 +68,43 @@ class GameWorld:
     def remove_player(self, player_id: int):
         """移除玩家"""
         self.players.pop(player_id, None)
+        self._prev_positions.pop(player_id, None)
 
-    def update_player_move(self, player_id, location, rotation, is_sprinting):
-        """更新玩家位置"""
+    def update_player_move(self, player_id, location, rotation, is_sprinting,
+                            is_weapon_drawn=False, is_in_air=False):
+        """更新玩家位置，并从位置差计算速度"""
         if player_id in self.players:
             p = self.players[player_id]
+
+            # 从位置差计算速度
+            import time
+            now = time.time()
+            prev = self._prev_positions.get(player_id)
+            vel_x = 0.0
+            vel_z = 0.0
+            if prev:
+                dt = now - prev["t"]
+                if dt > 0.001:  # 避免除零
+                    vel_x = (location["x"] - prev["x"]) / dt
+                    vel_z = (location["z"] - prev["z"]) / dt
+                    # 限幅防止异常值
+                    max_vel = 2000.0
+                    vel_x = max(-max_vel, min(max_vel, vel_x))
+                    vel_z = max(-max_vel, min(max_vel, vel_z))
+
+            self._prev_positions[player_id] = {
+                "x": location["x"], "y": location["y"],
+                "z": location["z"], "t": now
+            }
+
             p["location"] = location
             p["rotation"] = rotation
             p["is_sprinting"] = is_sprinting
+            p["is_weapon_drawn"] = is_weapon_drawn
+            p["is_in_air"] = is_in_air
             p["move_speed"] = 900 if is_sprinting else 600
+            p["vel_x"] = vel_x
+            p["vel_z"] = vel_z
 
     def update_player_action(self, player_id, action_type):
         """更新玩家动作状态"""

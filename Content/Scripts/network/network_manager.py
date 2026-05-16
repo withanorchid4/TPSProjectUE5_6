@@ -31,7 +31,7 @@ class NetworkManager:
     STATE_IN_GAME = 4
 
     # 移动上报间隔（秒）
-    MOVE_SEND_INTERVAL = 0.1  # 10fps
+    MOVE_SEND_INTERVAL = 0.016  # ~60fps
 
     # 默认连接参数
     DEFAULT_HOST = "127.0.0.1"
@@ -225,17 +225,17 @@ class NetworkManager:
         self._state = self.STATE_DISCONNECTED
         self._login_step = None
 
-    def send_move(self, location, rotation, is_sprinting=False):
+    def send_move(self, location, rotation, is_sprinting=False,
+                  is_weapon_drawn=False, is_in_air=False,
+                  vel_x=0.0, vel_z=0.0):
         """发送位置同步（节流：MOVE_SEND_INTERVAL 间隔）"""
         if not self.is_in_game:
             return
 
-        current_time = ue.KismetSystemLibrary.GetGameTimeInSeconds(self) if hasattr(self, 'GetWorld') else 0.0
-        # 使用简单计时：由 caller 传入 delta_time 累积
-        # 这里用 NetClient 的内部计时
         import time
         now = time.time()
-        if now - self._last_move_time < self.MOVE_SEND_INTERVAL:
+        dt = now - self._last_move_time
+        if dt < self.MOVE_SEND_INTERVAL:
             return
         self._last_move_time = now
 
@@ -247,8 +247,22 @@ class NetworkManager:
         msg.rotation.yaw = rotation.get("yaw", 0.0) if isinstance(rotation, dict) else float(rotation.yaw)
         msg.rotation.roll = rotation.get("roll", 0.0) if isinstance(rotation, dict) else float(rotation.roll)
         msg.is_sprinting = is_sprinting
+        msg.is_weapon_drawn = is_weapon_drawn
+        msg.is_in_air = is_in_air
+        msg.vel_x = vel_x
+        msg.vel_z = vel_z
 
         self._client.send_msg(tps_pb2.CS_MOVE, msg.SerializeToString())
+
+        # 调试：统计每秒发送次数
+        if not hasattr(self, '_send_count'):
+            self._send_count = 0
+            self._send_count_time = now
+        self._send_count += 1
+        if now - self._send_count_time >= 1.0:
+            ue.LogWarning(f"[SYNC] A发送: {self._send_count}/s")
+            self._send_count = 0
+            self._send_count_time = now
 
     def send_shoot(self, start_location, direction, weapon_type=0):
         """发送射击同步"""
@@ -472,6 +486,18 @@ class NetworkManager:
         result = tps_pb2.ScPlayerStates()
         result.ParseFromString(data)
 
+        # 调试：统计每秒接收次数
+        import time
+        now = time.time()
+        if not hasattr(self, '_recv_count'):
+            self._recv_count = 0
+            self._recv_count_time = now
+        self._recv_count += 1
+        if now - self._recv_count_time >= 1.0:
+            ue.LogWarning(f"[SYNC] B接收: {self._recv_count}/s")
+            self._recv_count = 0
+            self._recv_count_time = now
+
         for p in result.players:
             if p.player_id == self._self_player_id:
                 continue  # 跳过自己
@@ -595,4 +621,8 @@ def _player_state_to_dict(ps):
         "is_sprinting": ps.is_sprinting,
         "is_aiming": ps.is_aiming,
         "is_reloading": ps.is_reloading,
+        "is_weapon_drawn": ps.is_weapon_drawn,
+        "is_in_air": ps.is_in_air,
+        "vel_x": ps.vel_x,
+        "vel_z": ps.vel_z,
     }

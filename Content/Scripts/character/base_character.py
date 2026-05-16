@@ -357,10 +357,22 @@ class BaseCharacter(ue.Character):
             loc = self.GetActorLocation()
             rot = self.GetActorRotation()
             is_sprinting = self.movement._is_sprinting if self.movement else False
+            is_weapon_drawn = getattr(self, '_is_weapon_drawn', False)
+            is_in_air = False
+            vel_x = 0.0
+            vel_z = 0.0
+            movement = self.CharacterMovement
+            if movement:
+                is_in_air = movement.IsFalling()
+                vel = movement.Velocity
+                if vel:
+                    vel_x = vel.x
+                    vel_z = vel.z
             self._net_manager.send_move(
                 {"x": loc.x, "y": loc.y, "z": loc.z},
                 {"pitch": rot.pitch, "yaw": rot.yaw, "roll": rot.roll},
-                is_sprinting
+                is_sprinting, is_weapon_drawn, is_in_air,
+                vel_x, vel_z
             )
     
     def switch_weapon(self):
@@ -495,6 +507,10 @@ class BaseCharacter(ue.Character):
                     state.get("is_sprinting", False),
                     state.get("is_aiming", False),
                     state.get("is_reloading", False),
+                    state.get("is_weapon_drawn", False),
+                    state.get("is_in_air", False),
+                    state.get("vel_x", 0.0),
+                    state.get("vel_z", 0.0),
                 )
 
     def _on_net_shoot_result(self, shoot_dict):

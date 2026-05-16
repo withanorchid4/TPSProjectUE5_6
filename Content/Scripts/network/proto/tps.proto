@@ -66,8 +66,6 @@ message PlayerState {
   bool     is_reloading   = 9;
   bool     is_weapon_drawn = 10;
   bool     is_in_air      = 11;
-  float    vel_x          = 12;
-  float    vel_z          = 13;
 }
 
 message EnemyState {
@@ -157,8 +155,6 @@ message CsMove {
   bool    is_sprinting   = 3;
   bool    is_weapon_drawn = 4;
   bool    is_in_air      = 5;
-  float   vel_x          = 6;
-  float   vel_z          = 7;
 }
 
 message ScPlayerStates {

@@ -1,11 +1,24 @@
 # -*- encoding: utf-8 -*-
-"""远程玩家实体
+"""远程玩家实体（速度驱动 + 位置纠偏）
 
-在本地客户端场景中代表一个远程玩家，由网络数据驱动位置/旋转/动画。
+采用 KBEngine 风格的状态同步：
+- 服务端广播 速度(vel_x/vel_z) + 位置，客户端用 AddMovementInput 驱动移动
+- Walking 模式下 Velocity/动画/重力/碰撞全部自然工作
+- 收到服务端位置时插值趋近（小偏差平滑，大偏差瞬移）
 """
 
 import ue
-import time
+
+
+# ─── 纠偏参数 ───
+SNAP_DISTANCE = 500.0      # 超过此距离直接传送
+INTERP_DISTANCE = 50.0      # 超过此距离开始插值纠偏
+INTERP_SPEED = 10.0        # 插值速度（越大越快趋近服务端位置）
+ROT_SPEED = 720.0           # 旋转追踪速度 (度/秒)
+
+# ─── 速度驱动参数 ───
+WALK_SPEED = 600.0
+JOG_SPEED = 900.0
 
 
 @ue.uclass()
@@ -13,39 +26,60 @@ class RemotePlayer(ue.Character):
     """远程玩家 Actor
 
     由 BaseCharacter 在收到 ScPlayerJoin 时 spawn，
-    由 ScPlayerStates 驱动位置更新。
+    由 ScPlayerStates 驱动：速度驱动移动 + 位置插值纠偏。
     """
 
-    # 蓝图路径（用户需要创建 BP_RemotePlayer 蓝图）
+    # 蓝图路径
     BP_PATH = "/Game/BluePrint/BP_RemotePlayer.BP_RemotePlayer_C"
 
     def __init_pyobj__(self):
         self._player_id = -1
         self._char_name = ""
-        self._last_location = None  # {"x","y","z"}
-        self._last_update_time = 0.0
         self._weapon_mesh = None
         self._destroyed = False
+        self._ticker_handle = None
+
+        # 服务端目标位置（用于纠偏）
+        self._server_loc = None   # {"x","y","z"}
+        self._server_rot = None   # {"pitch","yaw","roll"}
+
+        # 服务端速度
+        self._vel_x = 0.0
+        self._vel_z = 0.0
+
+        # 动画变量
+        self._anim_sprinting = False
+        self._anim_aiming = False
+        self._anim_reloading = False
+        self._anim_weapon_drawn = False
+        self._anim_in_air = False
+
+        # 首次定位标记
+        self._initial_placed = False
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
         ue.Log(f"RemotePlayer: ReceiveBeginPlay (pid={self._player_id})")
 
     def setup(self, player_id, char_name):
-        """初始化远程玩家：挂载武器、设置名称"""
+        """初始化远程玩家"""
         self._player_id = player_id
         self._char_name = char_name
 
-        # 关闭旋转跟随移动
+        # Walking 模式：自然移动/重力/碰撞/动画
         try:
             movement = self.CharacterMovement
             if movement:
                 movement.bOrientRotationToMovement = False
-        except Exception:
-            pass
+                movement.MaxWalkSpeed = JOG_SPEED
+        except Exception as e:
+            ue.LogWarning(f"RemotePlayer: Failed to set Walking mode: {e}")
 
-        # 挂载武器网格（和 BaseCharacter 一样）
+        # 挂载武器网格
         self._setup_weapon_mesh()
+
+        # 启动 ticker
+        self._ticker_handle = ue.AddTicker(self._on_ticker)
 
         ue.LogWarning(f"RemotePlayer: setup pid={player_id} name={char_name}")
 
@@ -73,67 +107,187 @@ class RemotePlayer(ue.Character):
         self._weapon_mesh.SetRelativeRotation(
             ue.Rotator(0.0, 90.0, 0.0), False
         )
-        self._weapon_mesh.SetVisibility(True)
+        self._weapon_mesh.SetVisibility(False)
 
     def update_state(self, location, rotation, is_sprinting=False,
-                     is_aiming=False, is_reloading=False):
-        """由网络数据驱动：更新位置/旋转/动画
-
-        Args:
-            location: {"x","y","z"}
-            rotation: {"pitch","yaw","roll"}
-            is_sprinting: 是否冲刺
-            is_aiming: 是否瞄准
-            is_reloading: 是否换弹
-        """
+                     is_aiming=False, is_reloading=False,
+                     is_weapon_drawn=False, is_in_air=False,
+                     vel_x=0.0, vel_z=0.0):
+        """由网络数据驱动：更新服务端位置/速度（不直接移动角色）"""
         if self._destroyed:
             return
 
-        new_loc = ue.Vector(location["x"], location["y"], location["z"])
-        new_rot = ue.Rotator(rotation["pitch"], rotation["yaw"], rotation["roll"])
+        # 首次定位：直接跳到目标位置
+        if not self._initial_placed:
+            loc = ue.Vector(location["x"], location["y"], location["z"])
+            rot = ue.Rotator(rotation["pitch"], rotation["yaw"], rotation["roll"])
+            self.K2_SetActorLocation(loc, False, None)
+            self.K2_SetActorRotation(rot, False)
+            self._initial_placed = True
 
-        # 计算速度供动画蓝图使用
+        self._server_loc = dict(location)
+        self._server_rot = dict(rotation)
+
+        self._anim_sprinting = is_sprinting
+        self._anim_aiming = is_aiming
+        self._anim_reloading = is_reloading
+        self._anim_weapon_drawn = is_weapon_drawn
+        self._anim_in_air = is_in_air
+
+        self._vel_x = vel_x
+        self._vel_z = vel_z
+
+    def _on_ticker(self, delta_time):
+        """每帧：速度驱动移动 + 位置纠偏"""
+        if self._destroyed:
+            return False
+
+        if not self._initial_placed:
+            return True
+
+        # ── 1. 速度驱动：AddMovementInput ──
+        self._apply_velocity_input(delta_time)
+
+        # ── 2. 位置纠偏 ──
+        self._correct_position(delta_time)
+
+        # ── 3. 旋转追踪 ──
+        self._update_rotation(delta_time)
+
+        # ── 4. 推送动画变量 ──
+        self._update_anim_vars()
+
+        return True
+
+    def _apply_velocity_input(self, delta_time):
+        """用服务端速度驱动移动
+
+        远程玩家没有 Controller，AddMovementInput 不生效，
+        直接设置 CharacterMovement.Velocity。
+        """
         movement = self.CharacterMovement
-        if movement and self._last_location:
-            now = time.time()
-            dt = now - self._last_update_time
-            if dt > 0.001:
-                dx = location["x"] - self._last_location["x"]
-                dy = location["y"] - self._last_location["y"]
-                dz = location["z"] - self._last_location["z"]
-                speed = (dx * dx + dy * dy + dz * dz) ** 0.5 / dt
-                forward = ue.KismetMathLibrary.GetForwardVector(new_rot)
-                vel = forward * speed
-                movement.Velocity = vel
+        if not movement:
+            return
 
-        self._last_location = dict(location)
-        self._last_update_time = time.time()
+        speed_sq = self._vel_x * self._vel_x + self._vel_z * self._vel_z
+        if speed_sq < 1.0:
+            # 速度为零时清空水平速度（保留垂直分量给重力）
+            vel = movement.Velocity
+            movement.Velocity = ue.Vector(0.0, 0.0, vel.z if vel else 0.0)
+            return
 
-        # 移动 Actor
-        self.K2_SetActorLocation(new_loc, False, None)
-        self.K2_SetActorRotation(new_rot, False)
+        speed = speed_sq ** 0.5
+        # 服务端 vel_x = UE X, vel_z = UE Y (水平面)
+        # 直接设置 Velocity，Walking 模式下 CharacterMovement 会据此移动
+        vel = movement.Velocity
+        movement.Velocity = ue.Vector(self._vel_x, self._vel_z, vel.z if vel else 0.0)
 
-        # 更新动画蓝图变量
+    def _correct_position(self, delta_time):
+        """位置纠偏：小偏差插值，大偏差瞬移"""
+        if self._server_loc is None:
+            return
+
+        current_loc = self.GetActorLocation()
+        server_loc = ue.Vector(
+            self._server_loc["x"],
+            self._server_loc["y"],
+            self._server_loc["z"]
+        )
+
+        delta = server_loc - current_loc
+        dist = delta.Size()
+
+        if dist > SNAP_DISTANCE:
+            # ── 太远：直接传送 ──
+            self.K2_SetActorLocation(server_loc, False, None)
+
+        elif dist > INTERP_DISTANCE:
+            # ── 中等偏差：插值趋近 ──
+            interp_alpha = min(1.0, INTERP_SPEED * delta_time)
+            new_loc = current_loc + delta * interp_alpha
+            self.K2_SetActorLocation(new_loc, False, None)
+
+        # else: 偏差小，不纠偏，让 AddMovementInput 自然移动
+
+    def _update_rotation(self, delta_time):
+        """旋转追踪"""
+        if self._server_rot is None:
+            return
+
+        target_yaw = self._server_rot["yaw"]
+        target_pitch = self._server_rot["pitch"]
+        target_roll = self._server_rot["roll"]
+
+        current_rot = self.GetActorRotation()
+
+        yaw_diff = self._shortest_angle_diff(current_rot.yaw, target_yaw)
+        pitch_diff = self._shortest_angle_diff(current_rot.pitch, target_pitch)
+        roll_diff = self._shortest_angle_diff(current_rot.roll, target_roll)
+
+        max_rot = ROT_SPEED * delta_time
+
+        if abs(yaw_diff) > max_rot:
+            yaw_diff = max_rot if yaw_diff > 0 else -max_rot
+        if abs(pitch_diff) > max_rot:
+            pitch_diff = max_rot if pitch_diff > 0 else -max_rot
+        if abs(roll_diff) > max_rot:
+            roll_diff = max_rot if roll_diff > 0 else -max_rot
+
+        new_yaw = current_rot.yaw + yaw_diff
+        new_pitch = current_rot.pitch + pitch_diff
+        new_roll = current_rot.roll + roll_diff
+
+        self.K2_SetActorRotation(
+            ue.Rotator(new_pitch, new_yaw, new_roll), False
+        )
+
+    @staticmethod
+    def _shortest_angle_diff(current, target):
+        """计算最短角度差"""
+        diff = target - current
+        while diff > 180.0:
+            diff -= 360.0
+        while diff < -180.0:
+            diff += 360.0
+        return diff
+
+    def _update_anim_vars(self):
+        """推送动画变量到 AnimBP
+
+        Walking 模式下 CharacterMovement 自然维护 Velocity，
+        AnimBP 可直接读取，无需手动推送。
+        """
         mesh = self.GetMesh()
-        if mesh:
-            try:
-                abp = mesh.GetAnimInstance()
-                if abp:
-                    if hasattr(abp, 'bIsSprinting'):
-                        abp.bIsSprinting = is_sprinting
-                    if hasattr(abp, 'bIsAiming'):
-                        abp.bIsAiming = is_aiming
-                    if hasattr(abp, 'bIsReloading'):
-                        abp.bIsReloading = is_reloading
-            except Exception:
-                pass
+        if not mesh:
+            return
+
+        # 武器可见性跟随持枪状态
+        if hasattr(self, '_weapon_mesh') and self._weapon_mesh:
+            self._weapon_mesh.SetVisibility(self._anim_weapon_drawn)
+
+        try:
+            abp = mesh.GetAnimInstance()
+            if not abp:
+                return
+
+            # Walking 模式下 Velocity 由 CharacterMovement 自然维护
+            # AnimBP 从 Velocity 自动算出 Speed/Direction
+            # 只需推送状态 bool
+            if hasattr(abp, 'bIsSprinting'):
+                abp.bIsSprinting = self._anim_sprinting
+            if hasattr(abp, 'bIsAiming'):
+                abp.bIsAiming = self._anim_aiming
+            if hasattr(abp, 'bIsReloading'):
+                abp.bIsReloading = self._anim_reloading
+            if hasattr(abp, 'bHasWeapon'):
+                abp.bHasWeapon = self._anim_weapon_drawn
+            if hasattr(abp, 'bIsInAir'):
+                abp.bIsInAir = self._anim_in_air
+        except Exception as e:
+            ue.LogWarning(f"RemotePlayer: _update_anim_vars error: {e}")
 
     def play_shoot(self, weapon_type=0):
-        """远程玩家射击：生成弹道特效
-
-        Args:
-            weapon_type: 0=普通子弹, 1=魔法箭
-        """
+        """远程玩家射击：生成弹道特效"""
         if self._destroyed:
             return
 
@@ -146,7 +300,6 @@ class RemotePlayer(ue.Character):
         forward = ue.KismetMathLibrary.GetForwardVector(actor_rot)
 
         if weapon_type == 0:
-            # 普通子弹：生成 TracerRound
             hand_loc = mesh.GetSocketLocation(ue.Name("hand_r"))
             muzzle_loc = hand_loc + forward * 30.0
             target_loc = actor_loc + forward * 3000.0
@@ -160,14 +313,12 @@ class RemotePlayer(ue.Character):
                 if tracer:
                     tracer.set_target(target_loc)
 
-            # 音效
             try:
                 from system.audio_manager import AudioManager
                 AudioManager.play_sound_at(muzzle_loc, "/Game/Sounds/Gunshot")
             except Exception:
                 pass
         else:
-            # 魔法箭：生成 MagicArrow
             hand_loc = mesh.GetSocketLocation(ue.Name("hand_r"))
             spawn_loc = hand_loc + forward * 30.0
 
@@ -185,9 +336,21 @@ class RemotePlayer(ue.Character):
         if self._destroyed:
             return
         self._destroyed = True
+        if self._ticker_handle is not None:
+            try:
+                ue.RemoveTicker(self._ticker_handle)
+            except Exception:
+                pass
+            self._ticker_handle = None
         ue.LogWarning(f"RemotePlayer: cleanup pid={self._player_id}")
         self.K2_DestroyActor()
 
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         self._destroyed = True
+        if self._ticker_handle is not None:
+            try:
+                ue.RemoveTicker(self._ticker_handle)
+            except Exception:
+                pass
+            self._ticker_handle = None

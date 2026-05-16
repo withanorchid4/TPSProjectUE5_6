@@ -158,37 +158,56 @@ class NetClient:
     # ─── Ticker 驱动收包 ───
 
     def _on_ticker(self, delta_time):
-        """每帧由 AddTicker 调用，执行非阻塞 recv + 消息分发"""
+        """每帧由 AddTicker 调用，循环 recv 直到掏空 socket 缓冲区"""
         if not self.sock or self.state == self.STATE_DISCONNECTED:
             return False
 
-        # 非阻塞 recv
-        try:
-            data = self.sock.recv(4096)
-            if not data:
-                ue.LogWarning("NetClient: Server disconnected")
+        # 循环 recv：一次 ticker 可能把多帧积压的消息全收上来
+        while True:
+            try:
+                data = self.sock.recv(8192)
+                if not data:
+                    ue.LogWarning("NetClient: Server disconnected")
+                    self.disconnect()
+                    return False
+                self.recv_buffer += data
+            except BlockingIOError:
+                break  # 无更多数据
+            except ConnectionResetError:
+                ue.LogWarning("NetClient: Connection reset by server")
                 self.disconnect()
                 return False
-            self.recv_buffer += data
-        except BlockingIOError:
-            pass  # 无数据，正常
-        except ConnectionResetError:
-            ue.LogWarning("NetClient: Connection reset by server")
-            self.disconnect()
-            return False
-        except Exception as e:
-            ue.LogError(f"NetClient: Recv error: {e}")
-            self.disconnect()
-            return False
+            except Exception as e:
+                ue.LogError(f"NetClient: Recv error: {e}")
+                self.disconnect()
+                return False
 
-        # 解包消息
+        # 解包所有完整消息
+        msg_count = 0
         for msg_id, msg_data in self._extract_messages():
+            msg_count += 1
             cb = self._msg_callbacks.get(msg_id)
             if cb:
                 try:
                     cb(msg_id, msg_data)
                 except Exception as e:
                     ue.LogError(f"NetClient: Callback error for msg {msg_id}: {e}")
+
+        # 调试：统计收包频率
+        if msg_count > 0:
+            import time
+            now = time.time()
+            if not hasattr(self, '_ticker_msg_count'):
+                self._ticker_msg_count = 0
+                self._ticker_msg_time = now
+                self._ticker_call_count = 0
+            self._ticker_msg_count += msg_count
+            self._ticker_call_count += 1
+            if now - self._ticker_msg_time >= 1.0:
+                ue.LogWarning(f"[SYNC] NetClient ticker: {self._ticker_call_count}次/s, 处理消息: {self._ticker_msg_count}/s")
+                self._ticker_msg_count = 0
+                self._ticker_call_count = 0
+                self._ticker_msg_time = now
 
         return True  # 继续 ticker
 

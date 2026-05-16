@@ -44,7 +44,7 @@ class GameServer:
         while self.running:
             try:
                 all_sockets = [self.listen_socket] + list(self.active_sessions.keys())
-                readable, _, _ = select.select(all_sockets, [], [], 0.033)  # ~30fps
+                readable, _, _ = select.select(all_sockets, [], [], 0.008)  # ~125fps，快速处理消息
 
                 for sock in readable:
                     if sock is self.listen_socket:
@@ -107,6 +107,13 @@ class GameServer:
                 session.player_state["rotation"] = dict(world_state["rotation"])
                 session.player_state["hp"] = world_state["hp"]
                 session.player_state["move_speed"] = world_state["move_speed"]
+                session.player_state["is_sprinting"] = world_state.get("is_sprinting", False)
+                session.player_state["is_aiming"] = world_state.get("is_aiming", False)
+                session.player_state["is_reloading"] = world_state.get("is_reloading", False)
+                session.player_state["is_weapon_drawn"] = world_state.get("is_weapon_drawn", False)
+                session.player_state["is_in_air"] = world_state.get("is_in_air", False)
+                session.player_state["vel_x"] = world_state.get("vel_x", 0.0)
+                session.player_state["vel_z"] = world_state.get("vel_z", 0.0)
 
             # 保存断线状态（现在包含最新位置）
             self.disconnected_sessions[account] = session.player_state
@@ -125,26 +132,20 @@ class GameServer:
                 print(f"Player {session.player_state.get('char_name')} disconnected, preserved for 5 minutes")
 
     def _broadcast_world_state(self):
-        """每帧广播所有玩家位置"""
+        """周期性广播所有玩家位置（安全兜底，每 0.1s 一次）"""
+        now = time.time()
+        if not hasattr(self, '_last_broadcast_time'):
+            self._last_broadcast_time = 0
+        if now - self._last_broadcast_time < 0.1:
+            return
+        self._last_broadcast_time = now
         if not self.game_world.players:
             return
 
         states = tps_pb2.ScPlayerStates()
         for p in self.game_world.get_all_player_states():
-            ps = states.players.add()
-            ps.player_id = p["player_id"]
-            ps.char_name = p["char_name"]
-            ps.location.x = p["location"]["x"]
-            ps.location.y = p["location"]["y"]
-            ps.location.z = p["location"]["z"]
-            ps.rotation.pitch = p["rotation"]["pitch"]
-            ps.rotation.yaw = p["rotation"]["yaw"]
-            ps.rotation.roll = p["rotation"]["roll"]
-            ps.hp = p["hp"]
-            ps.move_speed = p["move_speed"]
-            ps.is_sprinting = p.get("is_sprinting", False)
-            ps.is_aiming = p.get("is_aiming", False)
-            ps.is_reloading = p.get("is_reloading", False)
+            from msg_handler import _fill_player_state
+            _fill_player_state(states.players.add(), p)
 
         data = states.SerializeToString()
         for session in self.active_sessions.values():

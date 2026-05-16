@@ -2,6 +2,29 @@ from proto import tps_pb2
 from proto.tps_pb2 import MsgId
 
 
+def _fill_player_state(ps_msg, p_dict):
+    """从 dict 填充 PlayerState protobuf 消息"""
+    ps_msg.player_id = p_dict.get("player_id", 0)
+    ps_msg.char_name = p_dict.get("char_name", "")
+    loc = p_dict.get("location", {})
+    ps_msg.location.x = loc.get("x", 0)
+    ps_msg.location.y = loc.get("y", 0)
+    ps_msg.location.z = loc.get("z", 0)
+    rot = p_dict.get("rotation", {})
+    ps_msg.rotation.pitch = rot.get("pitch", 0)
+    ps_msg.rotation.yaw = rot.get("yaw", 0)
+    ps_msg.rotation.roll = rot.get("roll", 0)
+    ps_msg.hp = p_dict.get("hp", 100)
+    ps_msg.move_speed = p_dict.get("move_speed", 600)
+    ps_msg.is_sprinting = p_dict.get("is_sprinting", False)
+    ps_msg.is_aiming = p_dict.get("is_aiming", False)
+    ps_msg.is_reloading = p_dict.get("is_reloading", False)
+    ps_msg.is_weapon_drawn = p_dict.get("is_weapon_drawn", False)
+    ps_msg.is_in_air = p_dict.get("is_in_air", False)
+    ps_msg.vel_x = p_dict.get("vel_x", 0.0)
+    ps_msg.vel_z = p_dict.get("vel_z", 0.0)
+
+
 def handle_login(server, session, data):
     """处理登录/注册请求，返回需要广播的消息列表"""
     msg = tps_pb2.CsLogin()
@@ -122,6 +145,8 @@ def handle_select_character(server, session, data):
     ps.is_sprinting = ps_data.get("is_sprinting", False)
     ps.is_aiming = ps_data.get("is_aiming", False)
     ps.is_reloading = ps_data.get("is_reloading", False)
+    ps.is_weapon_drawn = ps_data.get("is_weapon_drawn", False)
+    ps.is_in_air = ps_data.get("is_in_air", False)
 
     if is_reconnect:
         print(f"[RECONNECT] {session.account} resumed at "
@@ -131,36 +156,26 @@ def handle_select_character(server, session, data):
     # 其他玩家
     for p in server.game_world.get_all_player_states():
         if p["player_id"] != pid:
-            player = enter_game.players.add()
-            player.player_id = p["player_id"]
-            player.char_name = p["char_name"]
-            player.location.x = p["location"]["x"]
-            player.location.y = p["location"]["y"]
-            player.location.z = p["location"]["z"]
-            player.rotation.pitch = p["rotation"]["pitch"]
-            player.rotation.yaw = p["rotation"]["yaw"]
-            player.rotation.roll = p["rotation"]["roll"]
-            player.hp = p["hp"]
-            player.move_speed = p["move_speed"]
+            _fill_player_state(enter_game.players.add(), p)
 
     session.send_msg(MsgId.SC_ENTER_GAME, enter_game.SerializeToString())
 
     # 广播 ScPlayerJoin
     broadcasts = []
     join_msg = tps_pb2.ScPlayerJoin()
-    join_msg.player.player_id = ps.player_id
-    join_msg.player.char_name = ps.char_name
-    join_msg.player.location.x = ps.location.x
-    join_msg.player.location.y = ps.location.y
-    join_msg.player.location.z = ps.location.z
-    join_msg.player.rotation.pitch = ps.rotation.pitch
-    join_msg.player.rotation.yaw = ps.rotation.yaw
-    join_msg.player.rotation.roll = ps.rotation.roll
-    join_msg.player.hp = ps.hp
-    join_msg.player.move_speed = ps.move_speed
-    join_msg.player.is_sprinting = ps.is_sprinting
-    join_msg.player.is_aiming = ps.is_aiming
-    join_msg.player.is_reloading = ps.is_reloading
+    _fill_player_state(join_msg.player, {
+        "player_id": ps.player_id,
+        "char_name": ps.char_name,
+        "location": {"x": ps.location.x, "y": ps.location.y, "z": ps.location.z},
+        "rotation": {"pitch": ps.rotation.pitch, "yaw": ps.rotation.yaw, "roll": ps.rotation.roll},
+        "hp": ps.hp,
+        "move_speed": ps.move_speed,
+        "is_sprinting": ps.is_sprinting,
+        "is_aiming": ps.is_aiming,
+        "is_reloading": ps.is_reloading,
+        "is_weapon_drawn": ps.is_weapon_drawn,
+        "is_in_air": ps.is_in_air,
+    })
 
     broadcasts.append((MsgId.SC_PLAYER_JOIN, join_msg.SerializeToString(), session))
 
@@ -201,7 +216,7 @@ def handle_delete_character(server, session, data):
 
 
 def handle_move(server, session, data):
-    """处理玩家移动上报"""
+    """处理玩家移动上报 — 立即广播给其他玩家"""
     msg = tps_pb2.CsMove()
     msg.ParseFromString(data)
 
@@ -222,8 +237,30 @@ def handle_move(server, session, data):
             pid,
             location,
             rotation,
-            msg.is_sprinting
+            msg.is_sprinting,
+            msg.is_weapon_drawn,
+            msg.is_in_air
         )
+
+        # 立即广播该玩家的位置给其他玩家（不等待 _broadcast_world_state）
+        p = server.game_world.get_player_state(pid)
+        if p:
+            states = tps_pb2.ScPlayerStates()
+            _fill_player_state(states.players.add(), p)
+
+            # 调试：统计服务端每秒转发次数
+            import time
+            now = time.time()
+            if not hasattr(server, '_fwd_count'):
+                server._fwd_count = 0
+                server._fwd_count_time = now
+            server._fwd_count += 1
+            if now - server._fwd_count_time >= 1.0:
+                print(f"[SYNC] 服务端转发: {server._fwd_count}/s")
+                server._fwd_count = 0
+                server._fwd_count_time = now
+
+            return [(MsgId.SC_PLAYER_STATES, states.SerializeToString(), session)]
 
     return []
 
