@@ -105,7 +105,7 @@ class GameWorld:
                 dt = now - prev["t"]
                 if dt > 0.001:  # 避免除零
                     vel_x = (location["x"] - prev["x"]) / dt
-                    vel_z = (location["z"] - prev["z"]) / dt
+                    vel_z = (location["y"] - prev["y"]) / dt
                     # 限幅防止异常值
                     max_vel = 2000.0
                     vel_x = max(-max_vel, min(max_vel, vel_x))

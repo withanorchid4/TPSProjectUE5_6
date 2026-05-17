@@ -378,7 +378,7 @@ class BaseCharacter(ue.Character):
                 vel = movement.Velocity
                 if vel:
                     vel_x = vel.x
-                    vel_z = vel.z
+                    vel_z = vel.y
             self._net_manager.send_move(
                 {"x": loc.x, "y": loc.y, "z": loc.z},
                 {"pitch": rot.pitch, "yaw": rot.yaw, "roll": rot.roll},
