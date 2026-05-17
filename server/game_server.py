@@ -184,6 +184,13 @@ class GameServer:
             print(f"Idle timeout (30s): {self.active_sessions[sock].addr}")
             self._on_disconnect(sock)
 
+    def is_account_online(self, account: str) -> bool:
+        """检查账号是否已有活跃连接（LOGGED_IN 或 IN_GAME）"""
+        for session in self.active_sessions.values():
+            if session.account == account and session.state in ("LOGGED_IN", "IN_GAME"):
+                return True
+        return False
+
     def broadcast(self, msg_id, data, exclude=None):
         """向所有在线玩家广播消息"""
         for session in self.active_sessions.values():

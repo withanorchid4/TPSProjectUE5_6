@@ -32,6 +32,13 @@ def handle_login(server, session, data):
 
     result = tps_pb2.ScLoginResult()
 
+    # 检查账号是否已在线（拒绝重复登录）
+    if server.is_account_online(msg.account):
+        result.success = False
+        result.msg = "该账号已在其他设备登录"
+        session.send_msg(MsgId.SC_LOGIN_RESULT, result.SerializeToString())
+        return []
+
     if msg.is_register:
         success = server.db.register(msg.account, msg.password)
     else:
