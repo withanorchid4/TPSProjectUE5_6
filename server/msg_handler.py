@@ -30,12 +30,13 @@ def handle_login(server, session, data):
     msg = tps_pb2.CsLogin()
     msg.ParseFromString(data)
 
+    result = tps_pb2.ScLoginResult()
+
     if msg.is_register:
         success = server.db.register(msg.account, msg.password)
     else:
         success = server.db.login(msg.account, msg.password)
 
-    result = tps_pb2.ScLoginResult()
     result.success = success
     if not success:
         if msg.is_register:

@@ -120,15 +120,9 @@ class BaseCharacter(ue.Character):
             from network.network_manager import NetworkManager
             nm = NetworkManager.get_instance()
 
-            # 如果单例残留了非DISCONNECTED状态（比如上次PIE未正常断开），重置
-            if nm.state != nm.STATE_DISCONNECTED and not nm.is_in_game:
-                ue.LogWarning("BaseCharacter: Resetting stale NetworkManager state")
-                NetworkManager.reset_instance()
-                nm = NetworkManager.get_instance()
-
             self._net_manager = nm
 
-            # 注册游戏回调
+            # 注册游戏回调（覆盖 UI 层的回调，接管网络事件）
             self._net_manager.on_enter_game = self._on_net_enter_game
             self._net_manager.on_player_states = self._on_net_player_states
             self._net_manager.on_shoot_result = self._on_net_shoot_result
@@ -139,8 +133,21 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_enemy_states = self._on_net_enemy_states
             self._net_manager.on_enemy_event = self._on_net_enemy_event
 
-            # 连接并自动登录
-            if not self._net_manager.is_in_game:
+            if nm.is_in_game:
+                # 已在游戏中（关卡切换后 / LoginPanel流程SC_ENTER_GAME已到达）：重新初始化敌人同步
+                self._setup_enemy_sync()
+                # 为 NM 中已缓存的远程玩家触发 spawn 补偿
+                if nm.remote_players:
+                    for pid, pstate in nm.remote_players.items():
+                        if pid not in self._remote_players:
+                            self._spawn_remote_player(pid, pstate)
+                    ue.LogWarning(f"BaseCharacter: Spawned {len(self._remote_players)} cached remote players from NM")
+            elif nm.state != nm.STATE_DISCONNECTED:
+                # NM 在中间状态（SELECTING_CHAR/LOGGING_IN/CONNECTING）：
+                # LoginPanel 流程中 SC_ENTER_GAME 尚未到达，不重置，等回调自动触发
+                ue.LogWarning(f"BaseCharacter: NM in intermediate state ({nm.state}), waiting for SC_ENTER_GAME...")
+            else:
+                # 全新连接：自动登录
                 self._net_manager.connect_and_login()
 
             ue.LogWarning("BaseCharacter: Network initialized")
@@ -507,8 +514,10 @@ class BaseCharacter(ue.Character):
         self._setup_enemy_sync()
 
     def _on_net_player_states(self, remote_players):
-        """网络：收到远程玩家状态广播，更新所有远程玩家位置"""
-        from character.remote_player import RemotePlayer
+        """网络：收到远程玩家状态广播，更新所有远程玩家位置
+        
+        关卡切换后 _remote_players 被清空，需要重新 spawn 缺失的远程玩家。
+        """
         for pid, state in remote_players.items():
             rp = self._remote_players.get(pid)
             if rp and not rp._destroyed:
@@ -523,6 +532,9 @@ class BaseCharacter(ue.Character):
                     state.get("vel_x", 0.0),
                     state.get("vel_z", 0.0),
                 )
+            else:
+                # 远程玩家无 Actor（关卡切换后 _remote_players 被清空），重新 spawn
+                self._spawn_remote_player(pid, state)
 
     def _on_net_shoot_result(self, shoot_dict):
         """网络：收到远程玩家射击，在远程玩家位置生成弹道特效"""
@@ -536,23 +548,26 @@ class BaseCharacter(ue.Character):
         else:
             ue.Log(f"BaseCharacter: Remote player {pid} shot but no actor found")
 
-    def _on_net_player_join(self, player_state):
-        """网络：远程玩家加入，spawn 远程玩家 Actor"""
-        pid = player_state.get("player_id", "?")
-        name = player_state.get("char_name", "?")
+    def _spawn_remote_player(self, pid, state):
+        """生成远程玩家 Actor（供 _on_net_player_join 和 _on_net_player_states 复用）"""
+        from character.remote_player import RemotePlayer
+
+        # 清理已销毁的旧引用
+        old_rp = self._remote_players.get(pid)
+        if old_rp and old_rp._destroyed:
+            del self._remote_players[pid]
 
         if pid in self._remote_players:
-            ue.LogWarning(f"BaseCharacter: Player {pid} already exists, skip spawn")
             return
 
-        from character.remote_player import RemotePlayer
         world = self.GetWorld()
         if not world:
             ue.LogError("BaseCharacter: No world, cannot spawn remote player")
             return
 
-        spawn_loc = player_state.get("location", {"x": 0, "y": 0, "z": 200})
-        spawn_rot = player_state.get("rotation", {"pitch": 0, "yaw": 0, "roll": 0})
+        name = state.get("char_name", f"Player_{pid}")
+        spawn_loc = state.get("location", {"x": 0, "y": 0, "z": 200})
+        spawn_rot = state.get("rotation", {"pitch": 0, "yaw": 0, "roll": 0})
 
         location = ue.Vector(spawn_loc["x"], spawn_loc["y"], spawn_loc["z"])
         rotation = ue.Rotator(spawn_rot["pitch"], spawn_rot["yaw"], spawn_rot["roll"])
@@ -562,18 +577,21 @@ class BaseCharacter(ue.Character):
         if bp_class:
             rp = world.SpawnActor(bp_class, location, rotation)
         else:
-            # 蓝图不存在则用纯 Python 类
             ue.LogWarning("BaseCharacter: BP_RemotePlayer not found, using Python class")
             rp = world.SpawnActor(RemotePlayer, location, rotation)
 
         if rp:
             rp.setup(pid, name)
             self._remote_players[pid] = rp
-            # 立即更新一次状态
             rp.update_state(spawn_loc, spawn_rot)
             ue.LogWarning(f"BaseCharacter: Spawned remote player {pid} ({name})")
         else:
             ue.LogError(f"BaseCharacter: Failed to spawn remote player {pid}")
+
+    def _on_net_player_join(self, player_state):
+        """网络：远程玩家加入，spawn 远程玩家 Actor"""
+        pid = player_state.get("player_id", "?")
+        self._spawn_remote_player(pid, player_state)
 
     def _on_net_player_leave(self, player_id):
         """网络：远程玩家离开，销毁 Actor"""

@@ -146,12 +146,13 @@ class TPSGameMode(ue.GameModeBase):
         """延迟一帧显示菜单（由 AddTicker 调用，返回 False 停止）"""
         try:
             pc = ue.GameplayStatics.GetPlayerController(self, 0)
-            if pc:
-                self._show_login_ui()
-                return False  # 停止 ticker
-            else:
+            if not pc:
                 ue.LogWarning("TPSGameMode: No PC yet, retrying next frame...")
                 return True  # 继续下一帧重试
+
+            else:
+                self._show_login_ui()
+            return False  # 停止 ticker
         except Exception as e:
             ue.LogError(f"TPSGameMode: _deferred_show_menu error: {e}")
             return False  # 出错时停止 ticker，避免无限重试
