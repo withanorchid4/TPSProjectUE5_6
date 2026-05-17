@@ -29,6 +29,8 @@ class TPSGameMode(ue.GameModeBase):
         self._pending_result_widget = None  # None/True(victory)/False(defeat)
         self._login_panel = None  # 登录界面控制器
         self._main_menu_panel = None  # 主菜单界面控制器
+        self._graphics_settings_panel = None  # 画质设置面板控制器
+        self._cached_chars = []  # 缓存角色列表（用于画质设置返回时重建主菜单）
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -184,7 +186,9 @@ class TPSGameMode(ue.GameModeBase):
 
         from ui.main_menu_ui import MainMenuPanel
         self._main_menu_panel = MainMenuPanel(self, pc, chars)
+        self._cached_chars = chars  # 缓存角色列表
         self._main_menu_panel.set_enter_game_callback(self._on_login_enter_game)
+        self._main_menu_panel.set_graphics_settings_callback(self._on_show_graphics_settings)
         ue.LogWarning("TPSGameMode: Main menu shown")
 
     def _on_login_enter_game(self):
@@ -201,5 +205,37 @@ class TPSGameMode(ue.GameModeBase):
         if pc:
             pc.bShowMouseCursor = False
             ue.LogWarning("TPSGameMode: Game input restore attempted")
+
+    def _on_show_graphics_settings(self):
+        """显示画质设置面板"""
+        if self._main_menu_panel:
+            self._main_menu_panel.destroy()
+            self._main_menu_panel = None
+
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if not pc:
+            ue.LogError("TPSGameMode: No PlayerController for graphics settings!")
+            return
+
+        from ui.graphics_settings_ui import GraphicsSettingsPanel
+        self._graphics_settings_panel = GraphicsSettingsPanel(self, pc)
+        self._graphics_settings_panel.set_back_callback(self._on_graphics_settings_back)
+        ue.LogWarning("TPSGameMode: Graphics settings panel shown")
+
+    def _on_graphics_settings_back(self):
+        """从画质设置返回主菜单"""
+        if self._graphics_settings_panel:
+            self._graphics_settings_panel.destroy()
+            self._graphics_settings_panel = None
+
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if not pc:
+            return
+
+        from ui.main_menu_ui import MainMenuPanel
+        self._main_menu_panel = MainMenuPanel(self, pc, self._cached_chars)
+        self._main_menu_panel.set_enter_game_callback(self._on_login_enter_game)
+        self._main_menu_panel.set_graphics_settings_callback(self._on_show_graphics_settings)
+        ue.LogWarning("TPSGameMode: Back to main menu")
 
 

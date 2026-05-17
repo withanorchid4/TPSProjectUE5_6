@@ -44,6 +44,7 @@ class BaseCharacter(ue.Character):
         # 网络管理
         self._net_manager = None
         self._remote_players = {}  # {player_id: RemotePlayer}
+        self._enemy_id_map = None  # {enemy_id: BaseEnemy} 懒初始化
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -135,6 +136,7 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_player_leave = self._on_net_player_leave
             self._net_manager.on_action = self._on_net_action
             self._net_manager.on_magic_arrow_hit = self._on_net_magic_arrow_hit
+            self._net_manager.on_enemy_states = self._on_net_enemy_states
 
             # 连接并自动登录
             if not self._net_manager.is_in_game:
@@ -375,6 +377,10 @@ class BaseCharacter(ue.Character):
                 is_sprinting, is_weapon_drawn, is_in_air,
                 vel_x, vel_z
             )
+            
+            # 主机：上报敌人状态
+            if self._net_manager.is_host:
+                self._report_enemy_states()
     
     def switch_weapon(self):
         """切换持枪/收枪状态（E键调用）"""
@@ -495,6 +501,9 @@ class BaseCharacter(ue.Character):
             )
             ue.LogWarning(f"BaseCharacter: Teleported to reconnect position "
                          f"({loc['x']:.0f},{loc['y']:.0f},{loc['z']:.0f})")
+        
+        # 分配敌人ID + 设置网络驱动模式
+        self._setup_enemy_sync()
 
     def _on_net_player_states(self, remote_players):
         """网络：收到远程玩家状态广播，更新所有远程玩家位置"""
@@ -646,6 +655,73 @@ class BaseCharacter(ue.Character):
         if hasattr(self, 'audio') and self.audio:
             self.audio.play_magic_arrow(location)
 
+    def _setup_enemy_sync(self):
+        """分配敌人ID + 设置网络驱动模式"""
+        from enemy.base_enemy import BaseEnemy
+        
+        world = self.GetWorld()
+        if not world:
+            return
+        
+        # 枚举所有敌人，按位置排序分配ID
+        all_enemies = ue.GameplayStatics.GetAllActorsOfClass(world, BaseEnemy)
+        # 按位置排序：先X，再Y，再Z（保证跨客户端一致）
+        sorted_enemies = sorted(all_enemies, key=lambda e: (e.GetActorLocation().x, e.GetActorLocation().y, e.GetActorLocation().z))
+        
+        is_host = self._net_manager.is_host if self._net_manager else False
+        
+        for idx, enemy in enumerate(sorted_enemies, 1):
+            enemy.enemy_id = idx
+            if not is_host:
+                enemy.set_network_driven(True)
+        
+        ue.LogWarning(f"BaseCharacter: Enemy sync setup, is_host={is_host}, enemy_count={len(sorted_enemies)}")
+    
+    def _on_net_enemy_states(self, enemies_list):
+        """网络：收到敌人状态同步，驱动本地敌人"""
+        from enemy.base_enemy import BaseEnemy
+        
+        world = self.GetWorld()
+        if not world:
+            return
+        
+        # 构建按 enemy_id 索引的本地敌人映射（懒初始化）
+        if not hasattr(self, '_enemy_id_map') or self._enemy_id_map is None:
+            self._enemy_id_map = {}
+            all_enemies = ue.GameplayStatics.GetAllActorsOfClass(world, BaseEnemy)
+            for e in all_enemies:
+                if e.enemy_id > 0:
+                    self._enemy_id_map[e.enemy_id] = e
+        
+        for e_state in enemies_list:
+            eid = e_state.get("enemy_id", 0)
+            enemy = self._enemy_id_map.get(eid)
+            if enemy:
+                enemy.apply_network_state(
+                    e_state.get("location", {}),
+                    e_state.get("rotation", {}),
+                    e_state.get("hp", 0),
+                    e_state.get("ai_state", 0),
+                    e_state.get("is_attacking", False),
+                )
+    
+    def _report_enemy_states(self):
+        """主机：收集并上报所有敌人状态"""
+        from enemy.base_enemy import BaseEnemy
+        
+        world = self.GetWorld()
+        if not world:
+            return
+        
+        all_enemies = ue.GameplayStatics.GetAllActorsOfClass(world, BaseEnemy)
+        enemies_data = []
+        for e in all_enemies:
+            if e.enemy_id > 0:
+                enemies_data.append(e.get_state_dict())
+        
+        if enemies_data and self._net_manager:
+            self._net_manager.send_enemy_states(enemies_data)
+
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
@@ -665,5 +741,6 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_player_leave = None
             self._net_manager.on_action = None
             self._net_manager.on_magic_arrow_hit = None
+            self._net_manager.on_enemy_states = None
             self._net_manager = None
         ue.Log(f"{self} ReceiveEndPlay")

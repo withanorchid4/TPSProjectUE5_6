@@ -36,6 +36,8 @@ enum MsgId {
   SC_GAME_RESULT       = 231;
   CS_MAGIC_ARROW_HIT   = 232;
   SC_MAGIC_ARROW_HIT   = 233;
+  CS_ENEMY_STATES      = 240;
+  SC_ENEMY_STATES      = 241;
 
   // 系统 300+
   SC_DISCONNECT     = 300;
@@ -73,10 +75,13 @@ message PlayerState {
 }
 
 message EnemyState {
-  int32   enemy_id   = 1;
-  int32   enemy_type = 2;  // 0=近战, 1=远程
-  Vector3 location   = 3;
-  int32   hp         = 4;
+  int32   enemy_id     = 1;
+  int32   enemy_type   = 2;  // 0=近战, 1=远程
+  Vector3 location      = 3;
+  int32   hp            = 4;
+  int32   ai_state      = 5;  // 0=idle, 1=chase, 2=attack, 3=stunned, 4=dead
+  bool    is_attacking  = 6;  // 攻击动画状态
+  Rotator rotation      = 7;  // 朝向
 }
 
 message ItemState {
@@ -130,6 +135,7 @@ message ScEnterGame {
   repeated EnemyState  enemies    = 2;
   repeated ItemState   items      = 3;
   PlayerState          self_state = 4;
+  bool                 is_host   = 5;  // 是否为主机
 }
 
 // ============ 重连 ============
@@ -280,4 +286,13 @@ message ScMagicArrowHitResult {
   int32   player_id     = 1;
   int32   arrow_id      = 2;
   Vector3 aoe_location   = 3;
+}
+
+// ============ 敌人状态同步 ============
+message CsEnemyStates {
+  repeated EnemyState enemies = 1;
+}
+
+message ScEnemyStates {
+  repeated EnemyState enemies = 1;
 }

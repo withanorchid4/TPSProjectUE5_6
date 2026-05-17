@@ -130,6 +130,9 @@ def handle_select_character(server, session, data):
     # 发送 ScEnterGame
     enter_game = tps_pb2.ScEnterGame()
 
+    # is_host: 第一个进游戏的玩家为主机
+    enter_game.is_host = server.game_world.is_host(pid)
+
     # self_state
     ps = enter_game.self_state
     ps.player_id = pid
@@ -405,6 +408,30 @@ def handle_magic_arrow_hit(server, session, data):
     return [(MsgId.SC_MAGIC_ARROW_HIT, result.SerializeToString(), None)]
 
 
+def handle_enemy_states(server, session, data):
+    """处理敌人状态同步 — 主机上报，转发给其他客户端"""
+    msg = tps_pb2.CsEnemyStates()
+    msg.ParseFromString(data)
+
+    # 直接转发给其他客户端
+    result = tps_pb2.ScEnemyStates()
+    for enemy in msg.enemies:
+        e = result.enemies.add()
+        e.enemy_id = enemy.enemy_id
+        e.enemy_type = enemy.enemy_type
+        e.location.x = enemy.location.x
+        e.location.y = enemy.location.y
+        e.location.z = enemy.location.z
+        e.hp = enemy.hp
+        e.ai_state = enemy.ai_state
+        e.is_attacking = enemy.is_attacking
+        e.rotation.pitch = enemy.rotation.pitch
+        e.rotation.yaw = enemy.rotation.yaw
+        e.rotation.roll = enemy.rotation.roll
+
+    return [(MsgId.SC_ENEMY_STATES, result.SerializeToString(), session)]
+
+
 # 消息分发表
 HANDLERS = {
     MsgId.CS_LOGIN: handle_login,
@@ -421,4 +448,5 @@ HANDLERS = {
     MsgId.CS_ACTION: handle_action,
     MsgId.CS_GAME_RESULT: handle_game_result,
     MsgId.CS_MAGIC_ARROW_HIT: handle_magic_arrow_hit,
+    MsgId.CS_ENEMY_STATES: handle_enemy_states,
 }

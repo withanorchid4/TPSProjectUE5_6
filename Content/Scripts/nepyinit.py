@@ -127,6 +127,14 @@ def on_post_engine_init():
     # 加载角色模块（在此处加载避免 AssetRegistry 时序问题）
     import character
 
+    # 初始化性能分级管理器
+    try:
+        from system.graphics_quality_manager import GraphicsQualityManager
+        gqm = GraphicsQualityManager.get_instance()
+        gqm.initialize()
+    except Exception as e:
+        ue.LogError(f'Failed to initialize GraphicsQualityManager: {e}')
+
 
 def on_shutdown():
     """NePy 插件关闭时调用"""

@@ -5,6 +5,7 @@ class GameWorld:
         self.players = {}       # player_id -> PlayerState dict
         self._next_player_id = 1
         self._prev_positions = {}  # player_id -> {"x","y","z","t"} 上一次位置+时间
+        self._host_player_id = None  # 主机玩家ID（第一个进游戏的玩家）
 
     def add_player(self, session, reuse_pid=None) -> int:
         """玩家进入游戏，分配 player_id，返回 id。
@@ -63,12 +64,30 @@ class GameWorld:
             session.player_state = {}
         session.player_state["player_id"] = pid
 
+        # 第一个进游戏的玩家成为主机
+        if self._host_player_id is None:
+            self._host_player_id = pid
+            print(f"[HOST] Player {pid} is now the host")
+
         return pid
 
     def remove_player(self, player_id: int):
         """移除玩家"""
         self.players.pop(player_id, None)
         self._prev_positions.pop(player_id, None)
+        
+        # 主机掉线
+        if self._host_player_id == player_id:
+            self._host_player_id = None
+            print(f"[HOST] Player {player_id} (host) disconnected")
+    
+    def is_host(self, player_id: int) -> bool:
+        """检查是否为主机"""
+        return self._host_player_id == player_id
+    
+    def get_host_player_id(self):
+        """获取主机玩家ID"""
+        return self._host_player_id
 
     def update_player_move(self, player_id, location, rotation, is_sprinting,
                             is_weapon_drawn=False, is_in_air=False):

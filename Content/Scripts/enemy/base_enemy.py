@@ -28,6 +28,15 @@ class BaseEnemy(ue.Character):
         self._target_yaw = None       # 目标朝向（平滑旋转用）
         self._rotation_speed = 15.0    # 旋转插值速度
         self._is_enemy = True         # 标记：供其他系统识别敌人
+        
+        # 网络同步
+        self.enemy_id = 0             # 由主机分配的唯一ID
+        self._is_network_driven = False  # 非主机时由网络驱动，禁用本地AI
+        self._net_ai_state = 0        # 网络AI状态: 0=idle,1=chase,2=attack,3=stunned,4=dead
+        self._net_is_attacking = False
+        self._prev_net_ai_state = 0   # 上一帧网络AI状态（检测变化）
+        self._prev_net_is_attacking = False
+        self._prev_net_loc = None     # 上一帧网络位置（计算速度用）
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -215,6 +224,20 @@ class BaseEnemy(ue.Character):
                 self.Destroy()
             return
         
+        # 网络驱动模式下不做本地AI/旋转
+        if self._is_network_driven:
+            # 只处理 bIsHit 还原
+            mesh = self.GetMesh()
+            if mesh:
+                anim = mesh.GetAnimInstance()
+                if anim:
+                    if self._pending_hit_reset:
+                        anim.bIsHit = False
+                        self._pending_hit_reset = False
+                    elif anim.bIsHit:
+                        self._pending_hit_reset = True
+            return
+        
         # 更新AI
         if self.ai:
             self.ai.tick(delta_time)
@@ -272,3 +295,108 @@ class BaseEnemy(ue.Character):
                 loc = self.GetActorLocation()
                 head_pos = ue.Vector(loc.X, loc.Y, loc.Z + 180.0)
                 hud.add_damage_number(head_pos, amount)
+    
+    def set_network_driven(self, enabled: bool):
+        """设置网络驱动模式（非主机客户端调用）"""
+        self._is_network_driven = enabled
+        if enabled and self.ai:
+            # 禁用本地AI：重置到IDLE
+            self.ai.state = EnemyState.IDLE
+    
+    def apply_network_state(self, location, rotation, hp, ai_state, is_attacking):
+        """应用网络状态（非主机客户端每帧调用）"""
+        if not self._is_network_driven:
+            return
+        
+        # 位置 + 旋转
+        loc = ue.Vector(location["x"], location["y"], location["z"])
+        rot = ue.Rotator(rotation.get("pitch", 0), rotation.get("yaw", 0), rotation.get("roll", 0))
+        self.K2_SetActorLocation(loc, False, None)
+        self.K2_SetActorRotation(rot, False)
+        
+        # 根据位置变化计算速度，驱动移动动画
+        movement = self.CharacterMovement
+        if movement:
+            if self._prev_net_loc is not None:
+                delta = loc - self._prev_net_loc
+                # 用固定帧间隔估算速度（主机约60fps上报）
+                vel = ue.Vector(delta.x * 60.0, delta.y * 60.0, delta.z * 60.0)
+                movement.Velocity = vel
+            self._prev_net_loc = loc
+        
+        # 血量同步
+        if self.health and not self.health.is_dead():
+            if hp <= 0:
+                # 敌人在主机端已死但本地还活着 → 强制死亡
+                self.take_damage(self.health.current_hp)
+            elif hp < self.health.current_hp:
+                # 血量减少（主机端已扣血） → 同步
+                diff = self.health.current_hp - hp
+                self.health.take_damage(diff)
+        
+        # AI状态 + 动画
+        self._net_ai_state = ai_state
+        self._net_is_attacking = is_attacking
+        
+        # 检测AI状态变化 → 推送动画
+        if ai_state != self._prev_net_ai_state:
+            self._apply_net_ai_state(ai_state)
+            self._prev_net_ai_state = ai_state
+        
+        # 攻击动画
+        if is_attacking and not self._prev_net_is_attacking:
+            self.attack()
+        self._prev_net_is_attacking = is_attacking
+    
+    def _apply_net_ai_state(self, ai_state):
+        """根据网络AI状态推送本地表现"""
+        mesh = self.GetMesh()
+        if not mesh:
+            return
+        anim = mesh.GetAnimInstance()
+        if not anim:
+            return
+        
+        # ai_state: 0=idle, 1=chase, 2=attack, 3=stunned, 4=dead
+        if ai_state == 3:  # STUNNED
+            if not self._is_stunned:
+                self._is_stunned = True
+                mesh.GlobalAnimRateScale = 0.0
+        elif ai_state != 3 and self._is_stunned:
+            self._is_stunned = False
+            mesh.GlobalAnimRateScale = 1.0
+    
+    def get_state_dict(self):
+        """获取当前状态（主机上报用）"""
+        loc = self.GetActorLocation()
+        rot = self.GetActorRotation()
+        ai_state_val = 0
+        if self.ai:
+            state_map = {
+                EnemyState.IDLE: 0,
+                EnemyState.CHASE: 1,
+                EnemyState.ATTACK: 2,
+                EnemyState.STUNNED: 3,
+                EnemyState.DEAD: 4,
+            }
+            ai_state_val = state_map.get(self.ai.state, 0)
+        
+        is_attacking = False
+        if self.ai and self.ai.state == EnemyState.ATTACK and self._attack_cooldown_active():
+            is_attacking = True
+        
+        return {
+            "enemy_id": self.enemy_id,
+            "enemy_type": 0 if self.__class__.__name__ == "MeleeEnemy" else 1,
+            "location": {"x": loc.x, "y": loc.y, "z": loc.z},
+            "hp": int(self.health.current_hp) if self.health and not self.health.is_dead() else 0,
+            "ai_state": ai_state_val,
+            "is_attacking": is_attacking,
+            "rotation": {"pitch": rot.pitch, "yaw": rot.yaw, "roll": rot.roll},
+        }
+    
+    def _attack_cooldown_active(self):
+        """检查攻击冷却是否正在进行（判断是否正在攻击）"""
+        if self.ai and self.ai._attack_cooldown_timer > 0:
+            return True
+        return False

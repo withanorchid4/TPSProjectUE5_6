@@ -122,12 +122,20 @@ class GameServer:
             # 从游戏世界移除
             pid = session.player_state.get("player_id")
             if pid:
+                was_host = self.game_world.is_host(pid)
                 self.game_world.remove_player(pid)
 
                 # 广播 ScPlayerLeave
                 leave_msg = tps_pb2.ScPlayerLeave()
                 leave_msg.player_id = pid
                 self.broadcast(MsgId.SC_PLAYER_LEAVE, leave_msg.SerializeToString())
+
+                # 主机掉线 → 通知其他客户端游戏结束
+                if was_host:
+                    disc_msg = tps_pb2.ScDisconnect()
+                    disc_msg.reason = "主机掉线，游戏结束"
+                    self.broadcast(MsgId.SC_DISCONNECT, disc_msg.SerializeToString())
+                    print(f"[HOST] Host player {pid} disconnected, notifying all clients")
 
                 print(f"Player {session.player_state.get('char_name')} disconnected, preserved for 5 minutes")
 

@@ -49,22 +49,26 @@ class EnemyAIComponent:
         self.on_stunned = None
         self.on_stun_end = None
         
-        # 缓存
-        self._player = None
+
     
     def _find_player(self):
-        """查找玩家角色"""
-        if self._player:
-            return self._player
+        """查找最近的玩家角色（含 RemotePlayer）"""
         all_actors = ue.GameplayStatics.GetAllActorsOfClass(
             self.owner.GetWorld(),
             ue.Character
         )
+        closest = None
+        closest_dist = float('inf')
         for actor in all_actors:
-            if hasattr(actor, 'movement') and hasattr(actor, 'shooting'):
-                self._player = actor
-                return actor
-        return None
+            if getattr(actor, '_is_enemy', False):
+                continue
+            if getattr(actor, '_destroyed', False):
+                continue
+            dist = self.owner.GetDistanceTo(actor)
+            if dist < closest_dist:
+                closest = actor
+                closest_dist = dist
+        return closest
     
     def _get_distance_to_player(self) -> float:
         """获取到玩家的距离"""

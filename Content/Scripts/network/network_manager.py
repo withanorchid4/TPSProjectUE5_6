@@ -68,7 +68,11 @@ class NetworkManager:
         self.on_action = None           # → callback(action_dict)
         self.on_enemy_event = None      # → callback(event_dict)
         self.on_magic_arrow_hit = None  # → callback(hit_dict)
+        self.on_enemy_states = None    # → callback(enemies_list)
         self.on_disconnect = None       # → callback()
+        
+        # 主机标记
+        self._is_host = False
 
         # 回调：UI 登录流程（仅 UI 模式使用）
         self.on_login_result = None     # → callback(success: bool, msg: str)
@@ -90,6 +94,7 @@ class NetworkManager:
         self._client.register_callback(tps_pb2.SC_ACTION, self._on_action)
         self._client.register_callback(tps_pb2.SC_ENEMY_EVENT, self._on_enemy_event)
         self._client.register_callback(tps_pb2.SC_MAGIC_ARROW_HIT, self._on_magic_arrow_hit)
+        self._client.register_callback(tps_pb2.SC_ENEMY_STATES, self._on_enemy_states)
         self._client.set_disconnect_callback(self._on_server_disconnect)
 
     # ─── 单例 ───
@@ -122,6 +127,10 @@ class NetworkManager:
     @property
     def is_in_game(self):
         return self._state == self.STATE_IN_GAME
+
+    @property
+    def is_host(self):
+        return self._is_host
 
     @property
     def self_location(self):
@@ -313,6 +322,33 @@ class NetworkManager:
 
         self._client.send_msg(tps_pb2.CS_MAGIC_ARROW_HIT, msg.SerializeToString())
 
+    def send_enemy_states(self, enemies_data):
+        """发送敌人状态同步（仅主机调用）
+        
+        enemies_data: list of dict, 每个包含 enemy_id, enemy_type, location, hp, ai_state, is_attacking, rotation
+        """
+        if not self.is_in_game:
+            return
+
+        msg = tps_pb2.CsEnemyStates()
+        for e in enemies_data:
+            es = msg.enemies.add()
+            es.enemy_id = e.get("enemy_id", 0)
+            es.enemy_type = e.get("enemy_type", 0)
+            loc = e.get("location", {})
+            es.location.x = loc.get("x", 0.0)
+            es.location.y = loc.get("y", 0.0)
+            es.location.z = loc.get("z", 0.0)
+            es.hp = e.get("hp", 0)
+            es.ai_state = e.get("ai_state", 0)
+            es.is_attacking = e.get("is_attacking", False)
+            rot = e.get("rotation", {})
+            es.rotation.pitch = rot.get("pitch", 0.0)
+            es.rotation.yaw = rot.get("yaw", 0.0)
+            es.rotation.roll = rot.get("roll", 0.0)
+
+        self._client.send_msg(tps_pb2.CS_ENEMY_STATES, msg.SerializeToString())
+
     # ─── 登录流程（内部） ───
 
     def _send_register(self):
@@ -470,6 +506,7 @@ class NetworkManager:
 
         self._self_player_id = result.self_state.player_id
         self._state = self.STATE_IN_GAME
+        self._is_host = result.is_host
 
         # 保存服务端记录的位置（重连时为断线前位置，正常进游戏为默认位置）
         loc = result.self_state.location
@@ -645,6 +682,29 @@ class NetworkManager:
                 self.on_magic_arrow_hit(hit_dict)
             except Exception as e:
                 ue.LogError(f"NetworkManager: on_magic_arrow_hit callback error: {e}")
+
+    def _on_enemy_states(self, msg_id, data):
+        """处理敌人状态同步广播"""
+        result = tps_pb2.ScEnemyStates()
+        result.ParseFromString(data)
+
+        enemies = []
+        for e in result.enemies:
+            enemies.append({
+                "enemy_id": e.enemy_id,
+                "enemy_type": e.enemy_type,
+                "location": {"x": e.location.x, "y": e.location.y, "z": e.location.z},
+                "hp": e.hp,
+                "ai_state": e.ai_state,
+                "is_attacking": e.is_attacking,
+                "rotation": {"pitch": e.rotation.pitch, "yaw": e.rotation.yaw, "roll": e.rotation.roll},
+            })
+
+        if self.on_enemy_states:
+            try:
+                self.on_enemy_states(enemies)
+            except Exception as e:
+                ue.LogError(f"NetworkManager: on_enemy_states callback error: {e}")
 
     def _on_server_disconnect(self):
         """服务端断开连接"""

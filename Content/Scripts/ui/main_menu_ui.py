@@ -51,6 +51,12 @@ class MainMenuPanel:
         except Exception as e:
             ue.LogWarning(f"MainMenuPanel: Delegate binding failed ({e})")
 
+        # 绑定画质设置按钮
+        try:
+            self._widget.btn_graphics_settings.OnClicked.Add(self._on_graphics_settings)
+        except Exception as e:
+            ue.LogWarning(f"MainMenuPanel: btn_graphics_settings binding failed ({e})")
+
         # 绑定角色槽位按钮
         for i in range(MAX_CHAR_SLOTS):
             btn = self._find_widget(f"btn_char_{i}")
@@ -165,6 +171,16 @@ class MainMenuPanel:
         self._set_status("Deleting character...")
         self._nm.delete_character(self._selected_char_id)
 
+    def _on_graphics_settings(self):
+        """画质设置按钮回调"""
+        if self._destroyed:
+            return
+        if self._on_graphics_settings_callback:
+            try:
+                self._on_graphics_settings_callback()
+            except Exception as e:
+                ue.LogError(f"MainMenuPanel: graphics_settings callback error: {e}")
+
     # ─── NetworkManager 回调 ───
 
     def _on_character_list(self, chars):
@@ -218,6 +234,10 @@ class MainMenuPanel:
 
     def set_enter_game_callback(self, callback):
         self._on_enter_game_callback = callback
+
+    def set_graphics_settings_callback(self, callback):
+        """设置画质设置按钮回调"""
+        self._on_graphics_settings_callback = callback
 
     def destroy(self):
         if self._destroyed:
@@ -287,3 +307,4 @@ class MainMenuPanel:
         return None
 
     _on_enter_game_callback = None
+    _on_graphics_settings_callback = None
