@@ -70,10 +70,26 @@ class BaseEnemy(ue.Character):
         """子类重写以配置AI参数"""
         return EnemyAIComponent(self)
     
-    def take_damage(self, amount: float, attacker=None):
-        """受到伤害"""
+    def take_damage(self, amount: float, attacker=None, from_network=False):
+        """受到伤害
+        
+        Args:
+            amount: 伤害量
+            attacker: 攻击者
+            from_network: True 表示来自网络广播，不再二次广播，避免无限循环
+        """
         if self.health and not self.health.is_dead():
             self.health.take_damage(amount, attacker)
+            # 只有本地发起的伤害才广播给其他客户端
+            if not from_network and self.enemy_id > 0 and amount > 0:
+                try:
+                    from network.network_manager import NetworkManager
+                    nm = NetworkManager.get_instance()
+                    if nm and nm.is_in_game:
+                        from network.proto import tps_pb2
+                        nm.send_enemy_event(self.enemy_id, tps_pb2.ENEMY_DAMAGE, amount)
+                except Exception as e:
+                    ue.LogWarning(f"BaseEnemy: send_enemy_event failed: {e}")
     
     def attack(self):
         """子类重写以实现攻击逻辑"""
@@ -327,12 +343,12 @@ class BaseEnemy(ue.Character):
         # 血量同步
         if self.health and not self.health.is_dead():
             if hp <= 0:
-                # 敌人在主机端已死但本地还活着 → 强制死亡
-                self.take_damage(self.health.current_hp)
+                # 敌人在主机端已死但本地还活着 → 强制死亡（网络来源，不再广播）
+                self.take_damage(self.health.current_hp, from_network=True)
             elif hp < self.health.current_hp:
-                # 血量减少（主机端已扣血） → 同步
+                # 血量减少（主机端已扣血） → 同步（网络来源，不再广播）
                 diff = self.health.current_hp - hp
-                self.health.take_damage(diff)
+                self.health.take_damage(diff, from_network=True)
         
         # AI状态 + 动画
         self._net_ai_state = ai_state

@@ -137,6 +137,7 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_action = self._on_net_action
             self._net_manager.on_magic_arrow_hit = self._on_net_magic_arrow_hit
             self._net_manager.on_enemy_states = self._on_net_enemy_states
+            self._net_manager.on_enemy_event = self._on_net_enemy_event
 
             # 连接并自动登录
             if not self._net_manager.is_in_game:
@@ -721,6 +722,38 @@ class BaseCharacter(ue.Character):
         
         if enemies_data and self._net_manager:
             self._net_manager.send_enemy_states(enemies_data)
+    
+    def _on_net_enemy_event(self, event_dict):
+        """网络：收到敌人事件广播（伤害/击杀/晕眩），在本地敌人上执行"""
+        from network.proto import tps_pb2
+        
+        enemy_id = event_dict.get("enemy_id", 0)
+        event_type = event_dict.get("event_type", 0)
+        value = event_dict.get("value", 0.0)
+        player_id = event_dict.get("player_id", 0)
+        
+        # 忽略自己发出的事件（本地已处理）
+        if self._net_manager and player_id == self._net_manager.self_player_id:
+            return
+        
+        # 找本地敌人
+        if not hasattr(self, '_enemy_id_map') or not self._enemy_id_map:
+            return
+        
+        enemy = self._enemy_id_map.get(enemy_id)
+        if not enemy:
+            return
+        
+        if event_type == tps_pb2.ENEMY_DAMAGE:
+            # 对本地敌人执行伤害（网络来源，不再二次广播）
+            enemy.take_damage(value, from_network=True)
+        elif event_type == tps_pb2.ENEMY_KILLED:
+            # 强制击杀（网络来源，不再二次广播）
+            if enemy.health and not enemy.health.is_dead():
+                enemy.take_damage(enemy.health.current_hp, from_network=True)
+        elif event_type == tps_pb2.ENEMY_STUNNED:
+            if enemy.ai:
+                enemy.ai.set_stunned(value)
 
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):

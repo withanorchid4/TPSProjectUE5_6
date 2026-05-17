@@ -24,6 +24,7 @@
 
 import socket
 import struct
+import select
 
 import ue
 
@@ -70,10 +71,28 @@ class NetClient:
             try:
                 self.sock.connect((host, port))
             except BlockingIOError:
-                pass  # 连接进行中，等 select/poll 通知
+                pass  # 连接进行中，需等待完成
             except ConnectionRefusedError:
                 ue.LogError(f"NetClient: Connection refused {host}:{port}")
                 self.state = self.STATE_DISCONNECTED
+                self.sock = None
+                return False
+
+            # 等待非阻塞连接完成（跨网络有延迟）
+            _, writable, _ = select.select([], [self.sock], [], 5.0)
+            if not writable:
+                ue.LogError(f"NetClient: Connect timeout {host}:{port}")
+                self.state = self.STATE_DISCONNECTED
+                self.sock.close()
+                self.sock = None
+                return False
+
+            # 检查连接是否真的成功
+            err = self.sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if err != 0:
+                ue.LogError(f"NetClient: Connect failed, error={err}")
+                self.state = self.STATE_DISCONNECTED
+                self.sock.close()
                 self.sock = None
                 return False
 
