@@ -229,16 +229,18 @@ enum EnemyEventType {
 }
 
 message CsEnemyEvent {
-  int32          enemy_id   = 1;  // 客户端分配的敌人ID
-  EnemyEventType event_type = 2;
-  float          value      = 3;  // damage=伤害值, killed=0, stunned=晕眩时长
+  int32          enemy_id    = 1;  // 客户端分配的敌人ID
+  EnemyEventType event_type  = 2;
+  float          value       = 3;  // damage=伤害值, killed=0, stunned=晕眩时长
+  int32          pickup_type = 5;  // ENEMY_KILLED时: 0=无, 1=弹药, 2=血包
 }
 
 message ScEnemyEvent {
-  int32          enemy_id   = 1;
-  EnemyEventType event_type = 2;
-  float          value      = 3;
-  int32          player_id  = 4;  // 触发者
+  int32          enemy_id    = 1;
+  EnemyEventType event_type  = 2;
+  float          value       = 3;
+  int32          player_id   = 4;  // 触发者
+  int32          pickup_type = 5;  // ENEMY_KILLED时: 0=无, 1=弹药, 2=血包
 }
 
 // ============ 动作同步 ============

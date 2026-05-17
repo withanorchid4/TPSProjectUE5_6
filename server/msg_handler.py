@@ -339,6 +339,7 @@ def handle_enemy_event(server, session, data):
     result.event_type = msg.event_type
     result.value = msg.value
     result.player_id = pid
+    result.pickup_type = msg.pickup_type
 
     return [(MsgId.SC_ENEMY_EVENT, result.SerializeToString(), None)]
 

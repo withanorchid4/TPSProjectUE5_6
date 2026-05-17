@@ -112,3 +112,23 @@ class PickupItem(ue.Actor):
             ue.LogWarning(f"PickupItem: {other_actor} picked up +{actual:.0f} HP")
 
         self.Destroy()
+
+    def set_type(self, pickup_type):
+        """覆盖道具类型（网络同步用，SpawnActor后调用）"""
+        if self.pickup_type == pickup_type:
+            return  # 类型一致，无需修改
+
+        self.pickup_type = pickup_type
+
+        # 更新视觉模型
+        if self.pickup_mesh:
+            mesh_path = self.AMMO_MESH_PATH if pickup_type == self.TYPE_AMMO else self.HEALTH_MESH_PATH
+            static_mesh = ue.LoadObject(ue.StaticMesh, mesh_path)
+            if static_mesh:
+                self.pickup_mesh.SetStaticMesh(static_mesh)
+                box = static_mesh.GetBoundingBox()
+                if box:
+                    center = box.Min + (box.Max - box.Min) * 0.5
+                    self.pickup_mesh.SetRelativeLocation(
+                        ue.Vector(-center.X, -center.Y, -center.Z), False
+                    )

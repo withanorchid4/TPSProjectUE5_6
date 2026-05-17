@@ -37,6 +37,8 @@ class BaseEnemy(ue.Character):
         self._prev_net_ai_state = 0   # 上一帧网络AI状态（检测变化）
         self._prev_net_is_attacking = False
         self._prev_net_loc = None     # 上一帧网络位置（计算速度用）
+        self._decided_pickup_type = 0  # 本地击杀时决定的道具类型（1=弹药,2=血包）
+        self._net_pickup_type = 0     # 网络告知的道具类型（由ENEMY_KILLED事件设置）
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -87,7 +89,15 @@ class BaseEnemy(ue.Character):
                     nm = NetworkManager.get_instance()
                     if nm and nm.is_in_game:
                         from network.proto import tps_pb2
-                        nm.send_enemy_event(self.enemy_id, tps_pb2.ENEMY_DAMAGE, amount)
+                        if self.health.is_dead():
+                            # 击杀：决定道具类型，发送 ENEMY_KILLED
+                            self._decided_pickup_type = 1 if ue.KismetMathLibrary.RandomFloat() < 0.5 else 2
+                            nm.send_enemy_event(self.enemy_id, tps_pb2.ENEMY_KILLED, 0, self._decided_pickup_type)
+                            ue.LogWarning(f"BaseEnemy: send ENEMY_KILLED enemy_id={self.enemy_id} pickup_type={self._decided_pickup_type}")
+                        else:
+                            # 非击杀：发送 ENEMY_DAMAGE
+                            nm.send_enemy_event(self.enemy_id, tps_pb2.ENEMY_DAMAGE, amount)
+                            ue.LogWarning(f"BaseEnemy: send ENEMY_DAMAGE enemy_id={self.enemy_id} amount={amount}")
                 except Exception as e:
                     ue.LogWarning(f"BaseEnemy: send_enemy_event failed: {e}")
     
@@ -292,14 +302,19 @@ class BaseEnemy(ue.Character):
         ue.Log(f"{self} ReceiveEndPlay")
     
     def _spawn_pickup(self):
-        """死亡时50%概率生成弹药包/急救包"""
+        """死亡时生成弹药包/急救包（道具类型由击杀者决定并同步）"""
         from pickup.pickup_item import PickupItem
         loc = self.GetActorLocation()
         world = self.GetWorld()
         if world:
             pickup = world.SpawnActor(PickupItem, loc, ue.Rotator(0.0, 0.0, 0.0))
             if pickup:
-                ue.Log(f"BaseEnemy: PickupItem spawned at ({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f})")
+                # 优先使用网络指定的类型，其次使用本地击杀时决定的类型
+                override_type = self._net_pickup_type or self._decided_pickup_type
+                if override_type:
+                    type_str = "ammo" if override_type == 1 else "health"
+                    pickup.set_type(type_str)
+                ue.LogWarning(f"BaseEnemy: PickupItem spawned at ({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f}) net_type={self._net_pickup_type} local_type={self._decided_pickup_type} final={'override:'+str(override_type) if override_type else 'random'}")
     
     def _show_damage_number(self, amount: float):
         """通知 HUD 显示伤害跳字"""

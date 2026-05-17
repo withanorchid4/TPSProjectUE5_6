@@ -349,13 +349,14 @@ class NetworkManager:
 
         self._client.send_msg(tps_pb2.CS_ENEMY_STATES, msg.SerializeToString())
 
-    def send_enemy_event(self, enemy_id, event_type, value=0.0):
+    def send_enemy_event(self, enemy_id, event_type, value=0.0, pickup_type=0):
         """发送敌人事件（伤害/击杀/晕眩），服务端广播给其他客户端
 
         Args:
             enemy_id: 敌人ID
             event_type: EnemyEventType 枚举值 (0=DAMAGE, 1=KILLED, 2=STUNNED)
             value: 事件关联值（伤害事件为伤害量）
+            pickup_type: ENEMY_KILLED时: 0=无, 1=弹药, 2=血包
         """
         if not self.is_in_game:
             return
@@ -364,6 +365,7 @@ class NetworkManager:
         msg.enemy_id = enemy_id
         msg.event_type = event_type
         msg.value = value
+        msg.pickup_type = pickup_type
 
         self._client.send_msg(tps_pb2.CS_ENEMY_EVENT, msg.SerializeToString())
 
@@ -672,6 +674,7 @@ class NetworkManager:
             "event_type": result.event_type,
             "value": result.value,
             "player_id": result.player_id,
+            "pickup_type": result.pickup_type,
         }
 
         if self.on_enemy_event:

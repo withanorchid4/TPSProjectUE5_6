@@ -657,7 +657,7 @@ class BaseCharacter(ue.Character):
             self.audio.play_magic_arrow(location)
 
     def _setup_enemy_sync(self):
-        """分配敌人ID + 设置网络驱动模式"""
+        """分配敌人ID + 设置网络驱动模式 + 构建enemy_id_map"""
         from enemy.base_enemy import BaseEnemy
         
         world = self.GetWorld()
@@ -671,12 +671,16 @@ class BaseCharacter(ue.Character):
         
         is_host = self._net_manager.is_host if self._net_manager else False
         
+        # 构建 enemy_id → enemy 映射（主机和非主机都需要，用于处理伤害事件）
+        self._enemy_id_map = {}
+        
         for idx, enemy in enumerate(sorted_enemies, 1):
             enemy.enemy_id = idx
+            self._enemy_id_map[idx] = enemy
             if not is_host:
                 enemy.set_network_driven(True)
         
-        ue.LogWarning(f"BaseCharacter: Enemy sync setup, is_host={is_host}, enemy_count={len(sorted_enemies)}")
+        ue.LogWarning(f"BaseCharacter: Enemy sync setup, is_host={is_host}, enemy_count={len(sorted_enemies)}, id_map={list(self._enemy_id_map.keys())}")
     
     def _on_net_enemy_states(self, enemies_list):
         """网络：收到敌人状态同步，驱动本地敌人"""
@@ -732,25 +736,36 @@ class BaseCharacter(ue.Character):
         value = event_dict.get("value", 0.0)
         player_id = event_dict.get("player_id", 0)
         
+        ue.LogWarning(f"BaseCharacter: _on_net_enemy_event enemy_id={enemy_id} type={event_type} value={value} from_player={player_id} self_pid={self._net_manager.self_player_id if self._net_manager else '?'}")
+        
         # 忽略自己发出的事件（本地已处理）
         if self._net_manager and player_id == self._net_manager.self_player_id:
+            ue.LogWarning(f"BaseCharacter: Ignoring own enemy event")
             return
         
         # 找本地敌人
         if not hasattr(self, '_enemy_id_map') or not self._enemy_id_map:
+            ue.LogWarning(f"BaseCharacter: _enemy_id_map not built, cannot process enemy event")
             return
         
         enemy = self._enemy_id_map.get(enemy_id)
         if not enemy:
+            ue.LogWarning(f"BaseCharacter: enemy_id={enemy_id} not found in id_map, keys={list(self._enemy_id_map.keys())}")
             return
         
         if event_type == tps_pb2.ENEMY_DAMAGE:
             # 对本地敌人执行伤害（网络来源，不再二次广播）
             enemy.take_damage(value, from_network=True)
+            ue.LogWarning(f"BaseCharacter: Applied network damage {value} to enemy {enemy_id}")
         elif event_type == tps_pb2.ENEMY_KILLED:
-            # 强制击杀（网络来源，不再二次广播）
+            # 设置网络指定的道具类型（必须在 _spawn_pickup 执行前设置，death_timer 有 0.7s 缓冲）
+            pickup_type = event_dict.get("pickup_type", 0)
+            if pickup_type > 0:
+                enemy._net_pickup_type = pickup_type
+            # 强制击杀（如果还活着）
             if enemy.health and not enemy.health.is_dead():
                 enemy.take_damage(enemy.health.current_hp, from_network=True)
+            ue.LogWarning(f"BaseCharacter: ENEMY_KILLED enemy {enemy_id}, pickup_type={pickup_type}, already_dead={enemy.health.is_dead() if enemy.health else True}")
         elif event_type == tps_pb2.ENEMY_STUNNED:
             if enemy.ai:
                 enemy.ai.set_stunned(value)
