@@ -42,8 +42,7 @@ class BaseCharacter(ue.Character):
         self._damage_intensity = 0.0
 
         # Buff发光材质
-        self._buff_glow_gold = None
-        self._buff_glow_red = None
+        self._buff_glow_mid = None  # MaterialInstanceDynamic，通过 CreateDynamicMaterialInstance 创建
         
         # 网络管理
         self._net_manager = None
@@ -237,33 +236,41 @@ class BaseCharacter(ue.Character):
             self._damage_ppv = None
     
     def _init_buff_glow(self):
-        """初始化Buff发光材质（加载预制的金/红两个静态材质实例）"""
+        """初始化Buff发光材质（MID动态调参方案）"""
         try:
-            self._buff_glow_gold = ue.LoadObject(ue.MaterialInstanceConstant,
-                "/Game/Materials/MI_BuffGlow_Gold.MI_BuffGlow_Gold")
-            self._buff_glow_red = ue.LoadObject(ue.MaterialInstanceConstant,
-                "/Game/Materials/MI_BuffGlow_Red.MI_BuffGlow_Red")
-
-            if not self._buff_glow_gold or not self._buff_glow_red:
-                ue.LogWarning("BaseCharacter: Buff glow MICs not found, buff glow disabled")
-                self._buff_glow_gold = None
-                self._buff_glow_red = None
+            # 加载基础材质 M_BuffGlow（含 GlowColor / GlowIntensity 参数）
+            parent_mat = ue.LoadObject(ue.Material,
+                "/Game/Materials/M_BuffGlow.M_BuffGlow")
+            if not parent_mat:
+                ue.LogWarning("BaseCharacter: M_BuffGlow not found, buff glow disabled")
+                self._buff_glow_mid = None
                 return
 
-            ue.Log("BaseCharacter: Buff glow initialized")
+            # 用 KismetMaterialLibrary.CreateDynamicMaterialInstance 正确创建 MID
+            mid = ue.KismetMaterialLibrary.CreateDynamicMaterialInstance(
+                self, parent_mat, "BuffGlowMID")
+            if not mid:
+                ue.LogWarning("BaseCharacter: Failed to create BuffGlow MID")
+                self._buff_glow_mid = None
+                return
+
+            mid.OwnByPython()
+            mid.SetScalarParameterValue(ue.Name("GlowIntensity"), 0.0)
+
+            self._buff_glow_mid = mid
+            ue.Log(f"BaseCharacter: Buff glow MID created via CreateDynamicMaterialInstance")
         except Exception as e:
             ue.LogWarning(f"BaseCharacter: Buff glow init failed: {e}")
-            self._buff_glow_gold = None
-            self._buff_glow_red = None
+            self._buff_glow_mid = None
     
     def _update_buff_glow(self):
-        """根据当前Buff状态切换OverlayMaterial
+        """根据当前Buff状态更新发光材质参数
 
-        增攻(attack_up)→金色发光，减攻(attack_down)→红色发光
+        有Buff时挂上OverlayMaterial并动态设置颜色/强度；
         无Buff时移除OverlayMaterial。
         """
         mesh = self.GetMesh()
-        if not mesh:
+        if not mesh or not self._buff_glow_mid:
             return
 
         has_buff = self.buff_component and len(self.buff_component.buffs) > 0
@@ -280,15 +287,19 @@ class BaseCharacter(ue.Character):
             mesh.SetOverlayMaterial(None)
             return
 
-        # 根据Buff类型选择对应颜色的MIC
-        if atk_up > 0:
-            target = self._buff_glow_gold
-        else:
-            target = self._buff_glow_red
+        # 挂上OverlayMaterial
+        mesh.SetOverlayMaterial(self._buff_glow_mid)
 
-        # 仅在当前Overlay不是目标材质时才切换（避免每帧重复设置）
-        if target and mesh.GetOverlayMaterial() is not target:
-            mesh.SetOverlayMaterial(target)
+        # 动态设置颜色和强度
+        if atk_up > 0:
+            color = ue.LinearColor(1.0, 0.8, 0.2, 1.0)
+            intensity = atk_up * 1.5
+        else:
+            color = ue.LinearColor(1.0, 0.1, 0.1, 1.0)
+            intensity = atk_down * 1.5
+
+        self._buff_glow_mid.SetVectorParameterValue(ue.Name("GlowColor"), color)
+        self._buff_glow_mid.SetScalarParameterValue(ue.Name("GlowIntensity"), intensity)
     
     def self_buff(self):
         """给自己添加增攻Buff（外部触发入口，按键等调用）"""

@@ -39,3 +39,37 @@ class MyActor(ue.Actor, TickableMixin):
 ```
 
 **注意**：Actor 销毁前必须调用 `_stop_ticker()`，否则 ticker 回调会在已销毁对象上执行并抛 RuntimeError。
+
+## 3. 查找 NePy 可用 API 的方法
+
+NePy 没有独立的 API 文档，但有两个关键文件可以作为完整的 API 参考：
+
+### 3.1 Python 类型存根（最全的 API 参考）
+
+**路径**：`Plugins/NePythonBinding/Tools/pystubs/ue/__init__.pyi`
+
+- 约 19 万行，包含所有 `ue.*` 模块暴露的 Python 类型签名
+- 搜索方式：在这个文件中搜索类名或方法名，如 `CreateDynamicMaterialInstance`、`KismetMaterialLibrary`
+- **这是发现可用 API 最可靠的方式**，比官方文档更全面
+
+### 3.2 C++ 绑定实现（验证 API 行为）
+
+**路径**：`Plugins/NePythonBinding/Source/NePythonBinding/Public/NePy/Auto/engine/`
+
+- 每个 UE 类对应一个 `NePyObject_*.cpp` 文件
+- 可确认 Python API 底层调用的是哪个 C++ 函数，以及参数映射关系
+- 例如 `NePyObject_KismetMaterialLibrary.cpp` 确认 `CreateDynamicMaterialInstance` 调用的是 `UKismetMaterialLibrary::CreateDynamicMaterialInstance`
+
+### 3.3 查找流程示例
+
+以"如何创建可用的 MaterialInstanceDynamic"为例：
+
+1. **先在 `.pyi` 中搜索** → 找到 `KismetMaterialLibrary.CreateDynamicMaterialInstance` 的签名
+2. **去 C++ 绑定验证** → 确认它调用的是 `UKismetMaterialLibrary::CreateDynamicMaterialInstance`（UE 的标准工厂方法）
+3. **使用** → `ue.KismetMaterialLibrary.CreateDynamicMaterialInstance(self, parent_mat, "Name")`
+
+### 3.4 重要经验：NewObject vs 工厂方法
+
+- `ue.NewObject(ue.MaterialInstanceDynamic)` 只创建 UObject 壳子，**不会初始化渲染资源**，用作 OverlayMaterial 会显示灰白
+- 正确做法是用 UE 暴露的工厂方法（如 `KismetMaterialLibrary.CreateDynamicMaterialInstance`），它们会完成完整的初始化
+- **原则**：如果 UE C++ 中某个类型有 `Create()` / `CreateInstance()` 等静态工厂方法，优先使用，不要用 `NewObject`
