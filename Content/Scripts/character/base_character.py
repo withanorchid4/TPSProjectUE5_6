@@ -40,6 +40,10 @@ class BaseCharacter(ue.Character):
         self._damage_mat = None
         self._damage_ppv = None
         self._damage_intensity = 0.0
+
+        # Buff发光材质
+        self._buff_glow_gold = None
+        self._buff_glow_red = None
         
         # 网络管理
         self._net_manager = None
@@ -66,6 +70,9 @@ class BaseCharacter(ue.Character):
         
         # 初始化受伤泛红后处理材质
         self._init_damage_overlay()
+        
+        # 初始化Buff发光材质
+        self._init_buff_glow()
         
         # 预加载魔法箭 AOE 特效（避免首次使用时异步编译延迟）
         aoe_fx = ue.LoadObject(ue.NiagaraSystem,
@@ -229,6 +236,60 @@ class BaseCharacter(ue.Character):
             self._damage_overlay_mpc = None
             self._damage_ppv = None
     
+    def _init_buff_glow(self):
+        """初始化Buff发光材质（加载预制的金/红两个静态材质实例）"""
+        try:
+            self._buff_glow_gold = ue.LoadObject(ue.MaterialInstanceConstant,
+                "/Game/Materials/MI_BuffGlow_Gold.MI_BuffGlow_Gold")
+            self._buff_glow_red = ue.LoadObject(ue.MaterialInstanceConstant,
+                "/Game/Materials/MI_BuffGlow_Red.MI_BuffGlow_Red")
+
+            if not self._buff_glow_gold or not self._buff_glow_red:
+                ue.LogWarning("BaseCharacter: Buff glow MICs not found, buff glow disabled")
+                self._buff_glow_gold = None
+                self._buff_glow_red = None
+                return
+
+            ue.Log("BaseCharacter: Buff glow initialized")
+        except Exception as e:
+            ue.LogWarning(f"BaseCharacter: Buff glow init failed: {e}")
+            self._buff_glow_gold = None
+            self._buff_glow_red = None
+    
+    def _update_buff_glow(self):
+        """根据当前Buff状态切换OverlayMaterial
+
+        增攻(attack_up)→金色发光，减攻(attack_down)→红色发光
+        无Buff时移除OverlayMaterial。
+        """
+        mesh = self.GetMesh()
+        if not mesh:
+            return
+
+        has_buff = self.buff_component and len(self.buff_component.buffs) > 0
+
+        if not has_buff:
+            if mesh.GetOverlayMaterial() is not None:
+                mesh.SetOverlayMaterial(None)
+            return
+
+        atk_up = self.buff_component.get_buff_stacks("attack_up")
+        atk_down = self.buff_component.get_buff_stacks("attack_down")
+
+        if atk_up <= 0 and atk_down <= 0:
+            mesh.SetOverlayMaterial(None)
+            return
+
+        # 根据Buff类型选择对应颜色的MIC
+        if atk_up > 0:
+            target = self._buff_glow_gold
+        else:
+            target = self._buff_glow_red
+
+        # 仅在当前Overlay不是目标材质时才切换（避免每帧重复设置）
+        if target and mesh.GetOverlayMaterial() is not target:
+            mesh.SetOverlayMaterial(target)
+    
     def self_buff(self):
         """给自己添加增攻Buff（外部触发入口，按键等调用）"""
         if self.buff_component:
@@ -333,6 +394,7 @@ class BaseCharacter(ue.Character):
         # 更新Buff组件（倒计时+过期移除）
         if self.buff_component:
             self.buff_component.tick(delta_time)
+            self._update_buff_glow()
         
         # 推送武器切换状态到动画蓝图
         self._update_weapon_anim_state()
