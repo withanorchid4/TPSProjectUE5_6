@@ -43,6 +43,8 @@ class BaseCharacter(ue.Character):
 
         # Buff发光材质
         self._buff_glow_mid = None  # MaterialInstanceDynamic，通过 CreateDynamicMaterialInstance 创建
+        self._blink_timer = 0.0     # Buff即将消失时的闪烁计时器
+        self._blink_on = True       # 闪烁状态（on/off）
         
         # 网络管理
         self._net_manager = None
@@ -263,10 +265,11 @@ class BaseCharacter(ue.Character):
             ue.LogWarning(f"BaseCharacter: Buff glow init failed: {e}")
             self._buff_glow_mid = None
     
-    def _update_buff_glow(self):
+    def _update_buff_glow(self, delta_time: float = 0.0):
         """根据当前Buff状态更新发光材质参数
 
         有Buff时挂上OverlayMaterial并动态设置颜色/强度；
+        剩余≤3s时闪烁（每0.2s在0与当前intensity之间切换）；
         无Buff时移除OverlayMaterial。
         """
         mesh = self.GetMesh()
@@ -278,6 +281,7 @@ class BaseCharacter(ue.Character):
         if not has_buff:
             if mesh.GetOverlayMaterial() is not None:
                 mesh.SetOverlayMaterial(None)
+            self._blink_timer = 0.0
             return
 
         atk_up = self.buff_component.get_buff_stacks("attack_up")
@@ -285,20 +289,36 @@ class BaseCharacter(ue.Character):
 
         if atk_up <= 0 and atk_down <= 0:
             mesh.SetOverlayMaterial(None)
+            self._blink_timer = 0.0
             return
 
         # 挂上OverlayMaterial
         mesh.SetOverlayMaterial(self._buff_glow_mid)
 
-        # 动态设置颜色和强度
+        # 计算颜色和基础强度
         if atk_up > 0:
             color = ue.LinearColor(1.0, 0.8, 0.2, 1.0)
-            intensity = atk_up * 1.5
+            base_intensity = atk_up * 1.5
+            remaining = self.buff_component.get_buff_remaining("attack_up")
         else:
             color = ue.LinearColor(1.0, 0.1, 0.1, 1.0)
-            intensity = atk_down * 1.5
+            base_intensity = atk_down * 1.5
+            remaining = self.buff_component.get_buff_remaining("attack_down")
 
         self._buff_glow_mid.SetVectorParameterValue(ue.Name("GlowColor"), color)
+
+        # 剩余≤3s时闪烁：每0.2s在0和base_intensity之间切换
+        if remaining <= 3.0:
+            self._blink_timer += delta_time
+            if self._blink_timer >= 0.1:
+                self._blink_timer -= 0.1
+                self._blink_on = not self._blink_on
+            intensity = base_intensity if self._blink_on else 0.0
+        else:
+            intensity = base_intensity
+            self._blink_timer = 0.0
+            self._blink_on = True
+
         self._buff_glow_mid.SetScalarParameterValue(ue.Name("GlowIntensity"), intensity)
     
     def self_buff(self):
@@ -405,7 +425,7 @@ class BaseCharacter(ue.Character):
         # 更新Buff组件（倒计时+过期移除）
         if self.buff_component:
             self.buff_component.tick(delta_time)
-            self._update_buff_glow()
+            self._update_buff_glow(delta_time)
         
         # 推送武器切换状态到动画蓝图
         self._update_weapon_anim_state()
