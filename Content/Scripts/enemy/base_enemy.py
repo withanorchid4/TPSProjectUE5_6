@@ -18,6 +18,8 @@ class BaseEnemy(ue.Character):
     
     DEFAULT_MAX_HP = 100.0
     DEATH_MONTAGE_PATH = "/Game/Characters/Mannequins/Anims/Death/MM_Death_Front_03_Montage.MM_Death_Front_03_Montage"
+    DISSOLVE_DURATION = 2.0  # 溶解动画时长（秒）
+    DISSOLVE_MAT_PATH = "/Game/Materials/Dissolve/M_Dissolve.M_Dissolve"
     
     def __init_pyobj__(self):
         self.health = None
@@ -39,6 +41,10 @@ class BaseEnemy(ue.Character):
         self._prev_net_loc = None     # 上一帧网络位置（计算速度用）
         self._decided_pickup_type = 0  # 本地击杀时决定的道具类型（1=弹药,2=血包）
         self._net_pickup_type = 0     # 网络告知的道具类型（由ENEMY_KILLED事件设置）
+        
+        # 溶解效果
+        self._dissolve_mid = None     # 溶解材质MID
+        self._dissolve_progress = 0.0 # 溶解进度 0→1
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -137,6 +143,9 @@ class BaseEnemy(ue.Character):
                     ue.LogWarning(f"BaseEnemy: Montage_Play result={result}")
                 else:
                     ue.LogWarning(f"BaseEnemy: Death montage not found at {self.DEATH_MONTAGE_PATH}")
+            
+            # 替换 slot0 为溶解材质
+            self._start_dissolve(mesh)
         
         # 停止移动
         movement = self.CharacterMovement
@@ -242,10 +251,19 @@ class BaseEnemy(ue.Character):
     def ReceiveTick(self, delta_time: float):
         is_dead = self.health and self.health.is_dead()
         
-        # 死亡后只做销毁倒计时
+        # 死亡后：播放溶解动画，完毕后销毁
         if is_dead:
             self._death_timer -= delta_time
-            if self._death_timer <= 0.0:
+            # 死亡动画结束后开始溶解
+            if self._death_timer <= 0.0 and self._dissolve_mid:
+                self._dissolve_progress += delta_time / self.DISSOLVE_DURATION
+                self._dissolve_mid.SetScalarParameterValue(
+                    ue.Name("DissolveAmount"), self._dissolve_progress)
+                if self._dissolve_progress >= 1.0:
+                    self._spawn_pickup()
+                    self.Destroy()
+            elif self._death_timer <= 0.0 and not self._dissolve_mid:
+                # 无溶解材质的兜底：直接销毁
                 self._spawn_pickup()
                 self.Destroy()
             return
@@ -300,6 +318,35 @@ class BaseEnemy(ue.Character):
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         ue.Log(f"{self} ReceiveEndPlay")
+    
+    def _start_dissolve(self, mesh):
+        """死亡时替换所有材质 slot 为溶解材质 MID"""
+        try:
+            dissolve_mat = ue.LoadObject(ue.Material, self.DISSOLVE_MAT_PATH)
+            if not dissolve_mat:
+                ue.LogWarning("BaseEnemy: M_Dissolve not found, skip dissolve effect")
+                return
+
+            mid = ue.KismetMaterialLibrary.CreateDynamicMaterialInstance(
+                self, dissolve_mat, "DissolveMID")
+            if not mid:
+                ue.LogWarning("BaseEnemy: Failed to create dissolve MID")
+                return
+
+            mid.OwnByPython()
+            mid.SetScalarParameterValue(ue.Name("DissolveAmount"), 0.0)
+
+            # 替换所有材质 slot（躯干+四肢等）
+            num_mats = mesh.GetNumMaterials()
+            for i in range(num_mats):
+                mesh.SetMaterial(i, mid)
+
+            self._dissolve_mid = mid
+            self._dissolve_progress = 0.0
+            ue.Log(f"BaseEnemy: Dissolve MID applied to {num_mats} material slots")
+        except Exception as e:
+            ue.LogWarning(f"BaseEnemy: Dissolve init failed: {e}")
+            self._dissolve_mid = None
     
     def _spawn_pickup(self):
         """死亡时生成弹药包/急救包（道具类型由击杀者决定并同步）"""
