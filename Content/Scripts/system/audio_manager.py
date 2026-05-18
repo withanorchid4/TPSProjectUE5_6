@@ -20,8 +20,9 @@ class AudioManager:
 
     # ── 音效资源路径 ──
     SOUND_PATHS = {
-        "gunshot":       "/Game/StarterContent/Audio/Fire01_Cue.Fire01_Cue",
+        "gunshot":       "/Game/StarterContent/Audio/Explosion02.Explosion02",
         "magic_arrow":   "/Game/StarterContent/Audio/Light02_Cue.Light02_Cue",
+        "magic_explode": "/Game/StarterContent/Audio/Explosion02.Explosion02",
         "enemy_hit":     "/Game/StarterContent/Audio/Explosion_Cue.Explosion_Cue",
         "enemy_death":   "/Game/StarterContent/Audio/Explosion01.Explosion01",
         "enemy_attack":  "/Game/StarterContent/Audio/Collapse_Cue.Collapse_Cue",
@@ -119,6 +120,10 @@ class AudioManager:
     def play_magic_arrow(self, location):
         """播放魔法箭音效"""
         self._play_sound_at("magic_arrow", location, 0.8)
+
+    def play_magic_explode(self, location):
+        """播放魔法箭爆炸音效"""
+        self._play_sound_at("magic_explode", location, 0.7)
 
     def play_enemy_hit(self, location):
         """播放敌人受击音效 + 爆炸特效"""

@@ -222,8 +222,10 @@ class MagicArrow(ue.Actor, TickableMixin):
         if owner and hasattr(owner, 'audio') and owner.audio:
             owner.audio.play_magic_arrow(self.GetActorLocation())
         
-        # 命中任何东西 → 播放AOE特效 + 晕眩范围内敌人
+        # 命中任何东西 → 播放AOE特效 + 爆炸音效 + 晕眩范围内敌人
         self._spawn_aoe_effect()
+        if owner and hasattr(owner, 'audio') and owner.audio:
+            owner.audio.play_magic_explode(self.GetActorLocation())
         self._stun_nearby_enemies()
         
         # 网络同步：广播魔法箭命中事件
@@ -246,6 +248,8 @@ class MagicArrow(ue.Actor, TickableMixin):
         
         # ue.LogWarning(f"MagicArrow: hit! spawning AOE + stun")
         self._spawn_aoe_effect()
+        if owner and hasattr(owner, 'audio') and owner.audio:
+            owner.audio.play_magic_explode(self.GetActorLocation())
         self._stun_nearby_enemies()
         
         # 网络同步：广播魔法箭命中事件
