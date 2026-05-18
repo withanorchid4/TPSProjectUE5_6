@@ -50,6 +50,9 @@ class BaseCharacter(ue.Character):
         self._net_manager = None
         self._remote_players = {}  # {player_id: RemotePlayer}
         self._enemy_id_map = None  # {enemy_id: BaseEnemy} 懒初始化
+        
+        # Dither遮挡测试
+        self._dither_original_mats = {}  # {actor: {slot_index: (original_material, dither_mid)}}
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -429,6 +432,9 @@ class BaseCharacter(ue.Character):
         
         # 推送武器切换状态到动画蓝图
         self._update_weapon_anim_state()
+        
+        # Dither遮挡检测
+        self._update_dither_occlusion()
         
         # 下一帧还原 bIsHit（延迟一帧，确保 AnimBP 能读到 True）
         mesh = self.GetMesh()
@@ -881,9 +887,102 @@ class BaseCharacter(ue.Character):
             if enemy.ai:
                 enemy.ai.set_stunned(value)
 
+    # ─── Dither遮挡测试 ───
+
+    _DITHER_ORIG_MAT_PATH = "/Game/Cartoon_City_Free/Materials/M_Color.M_Color"
+    _DITHER_MASK_MAT_PATH = "/Game/Materials/Dither/M_Color.M_Color"
+
+    def _update_dither_occlusion(self):
+        """射线检测相机→角色遮挡，命中时替换匹配的材质为Dither版"""
+        if not self.camera or not self.camera.camera:
+            return
+
+        cam_loc = self.camera.camera.GetWorldLocation()
+        head_loc = self.GetActorLocation()
+        head_loc.Z += 160.0  # 角色头部位置
+
+        direction = head_loc - cam_loc
+        distance = ue.KismetMathLibrary.VSize(direction)
+        if distance <= 0.0:
+            return
+
+        hit_result = ue.KismetSystemLibrary.LineTraceSingle(
+            self,
+            cam_loc,
+            head_loc,
+            ue.ETraceTypeQuery.TraceTypeQuery1,  # Visibility
+            False,  # bTraceComplex
+            [self],  # actors to ignore
+            0,      # EDrawDebugTrace::None
+            True,   # bIgnoreSelf
+        )
+
+        # 加载Dither材质
+        dither_mat = ue.LoadObject(ue.MaterialInterface, self._DITHER_MASK_MAT_PATH)
+        orig_mat = ue.LoadObject(ue.MaterialInterface, self._DITHER_ORIG_MAT_PATH)
+
+        hit, hit_info = hit_result
+        if hit and hit_info and hasattr(hit_info, 'bBlockingHit') and hit_info.bBlockingHit:
+            comp_ptr = hit_info.Component
+            hit_actor = None
+            if comp_ptr and hasattr(comp_ptr, 'Get'):
+                comp = comp_ptr.Get()
+                if comp and hasattr(comp, 'GetOwner'):
+                    hit_actor = comp.GetOwner()
+            if hit_actor and dither_mat and orig_mat:
+                ue.LogWarning(f"[Dither] Hit actor={hit_actor}, orig_mat_name={orig_mat.GetName()}")
+                self._apply_dither_to_actor(hit_actor, orig_mat, dither_mat)
+                return
+
+        # 无遮挡：还原所有已替换的物体
+        self._restore_all_dither()
+
+    def _apply_dither_to_actor(self, actor, orig_mat, dither_mat):
+        """检查actor的各slot，匹配原始材质的替换为Dither MID"""
+        mesh_comp = actor.GetComponentByClass(ue.StaticMeshComponent)
+        if not mesh_comp:
+            mesh_comp = actor.GetComponentByClass(ue.SkeletalMeshComponent)
+        if not mesh_comp:
+            return
+
+        if actor not in self._dither_original_mats:
+            self._dither_original_mats[actor] = {}
+
+        num_mats = mesh_comp.GetNumMaterials()
+        for i in range(num_mats):
+            if i in self._dither_original_mats[actor]:
+                continue
+
+            current_mat = mesh_comp.GetMaterial(i)
+            if current_mat and current_mat.GetName() == orig_mat.GetName():
+                # 用 CreateDynamicMaterialInstance 创建 MID（避免 NewObject 渲染初始化问题）
+                mid = ue.KismetMaterialLibrary.CreateDynamicMaterialInstance(
+                    self, dither_mat, "DitherMID")
+                if not mid:
+                    continue
+                mid.OwnByPython()
+                mid.SetScalarParameterValue(ue.Name("FadeOpacity"), 0.2)
+                self._dither_original_mats[actor][i] = (current_mat, mid)
+                mesh_comp.SetMaterial(i, mid)
+                ue.LogWarning(f"[Dither] Replaced slot {i} on {actor}, FadeOpacity=0.2")
+
+    def _restore_all_dither(self):
+        """还原所有已替换Dither材质的物体"""
+        for actor, slots in list(self._dither_original_mats.items()):
+            mesh_comp = actor.GetComponentByClass(ue.StaticMeshComponent)
+            if not mesh_comp:
+                mesh_comp = actor.GetComponentByClass(ue.SkeletalMeshComponent)
+            if mesh_comp:
+                for slot_idx, (orig_material, _) in slots.items():
+                    mesh_comp.SetMaterial(slot_idx, orig_material)
+        self._dither_original_mats.clear()
+
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):
         """角色结束播放时调用"""
+        # 还原Dither材质
+        self._restore_all_dither()
+        
         if self.input_handler:
             self.input_handler.unbind()
         # 清理远程玩家

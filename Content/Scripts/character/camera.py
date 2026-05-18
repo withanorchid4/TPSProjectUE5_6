@@ -56,6 +56,8 @@ class CameraComponent:
         self.spring_arm.bUsePawnControlRotation = True
         self.spring_arm.bEnableCameraLag = True
         self.spring_arm.CameraLagSpeed = 6.0
+        self.spring_arm.bDoCollisionTest = True
+        self.spring_arm.ProbeSize = 12.0
         
         # 查找现有的 Camera 组件
         self.camera = self.owner.GetComponentByClass(ue.CameraComponent)
