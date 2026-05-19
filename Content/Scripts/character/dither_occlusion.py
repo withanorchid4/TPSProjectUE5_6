@@ -5,6 +5,38 @@ import ue
 # orig材质路径 → dither材质路径 的配置映射（扩充只需加条目）
 DITHER_MAT_MAP = {
     "/Game/Cartoon_City_Free/Materials/M_Color": "/Game/Materials/Dither/M_Color",
+    "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower": "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower_Dither",
+    "/Game/LowerSector_Mod/Models/Apartment01/Materials/M_Apartment01": "/Game/LowerSector_Mod/Models/Apartment01/Materials/M_Apartment01_Dither",
+    "/Game/LowerSector_Mod/Models/BG_Buildings/Materials/M_BG_Building01": "/Game/LowerSector_Mod/Models/BG_Buildings/Materials/M_BG_Building01_Dither",
+    "/Game/LowerSector_Mod/Models/Bot/Materials/M_Bottington": "/Game/LowerSector_Mod/Models/Bot/Materials/M_Bottington_Dither",
+    "/Game/LowerSector_Mod/Models/Building01/Materials/M_B01_Corner01": "/Game/LowerSector_Mod/Models/Building01/Materials/M_B01_Corner01_Dither",
+    "/Game/LowerSector_Mod/Models/Building01/Materials/M_B01_Mid01": "/Game/LowerSector_Mod/Models/Building01/Materials/M_B01_Mid01_Dither",
+    "/Game/LowerSector_Mod/Models/BuildingPaneling01/Materials/M_BuildingPaneling01": "/Game/LowerSector_Mod/Models/BuildingPaneling01/Materials/M_BuildingPaneling01_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_CablePower": "/Game/LowerSector_Mod/Models/Cables/Materials/M_CablePower_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_003": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_003_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_004": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_004_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_005": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_005_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_006": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_006_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_007": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_007_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_008": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_008_Dither",
+    "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_009": "/Game/LowerSector_Mod/Models/Cables/Materials/M_Material_009_Dither",
+    "/Game/LowerSector_Mod/Models/ConcreteWalls/Materials/M_ConcreteWalls01": "/Game/LowerSector_Mod/Models/ConcreteWalls/Materials/M_ConcreteWalls01_Dither",
+    "/Game/LowerSector_Mod/Models/Entrance01/Materials/M_Entrance01": "/Game/LowerSector_Mod/Models/Entrance01/Materials/M_Entrance01_Dither",
+    "/Game/LowerSector_Mod/Models/Entrance01_Top/Materials/M_EntranceTop01": "/Game/LowerSector_Mod/Models/Entrance01_Top/Materials/M_EntranceTop01_Dither",
+    "/Game/LowerSector_Mod/Models/Entrance02/Materials/M_Entrance02": "/Game/LowerSector_Mod/Models/Entrance02/Materials/M_Entrance02_Dither",
+    "/Game/LowerSector_Mod/Models/LightProps/Materials/M_Lightpole01": "/Game/LowerSector_Mod/Models/LightProps/Materials/M_Lightpole01_Dither",
+    "/Game/LowerSector_Mod/Models/Pipes/Materials/M_Pipes1": "/Game/LowerSector_Mod/Models/Pipes/Materials/M_Pipes1_Dither",
+    "/Game/LowerSector_Mod/Models/PowerBox/Materials/M_PowerBox": "/Game/LowerSector_Mod/Models/PowerBox/Materials/M_PowerBox_Dither",
+    "/Game/LowerSector_Mod/Models/PowerCar/Materials/M_PowerCar": "/Game/LowerSector_Mod/Models/PowerCar/Materials/M_PowerCar_Dither",
+    "/Game/LowerSector_Mod/Models/RollDoor01/Materials/M_RollDoor": "/Game/LowerSector_Mod/Models/RollDoor01/Materials/M_RollDoor_Dither",
+    "/Game/LowerSector_Mod/Models/RoofTop/Materials/M_RoofTop": "/Game/LowerSector_Mod/Models/RoofTop/Materials/M_RoofTop_Dither",
+    "/Game/LowerSector_Mod/Models/SideWalk/Materials/M_SideWalk": "/Game/LowerSector_Mod/Models/SideWalk/Materials/M_SideWalk_Dither",
+    "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower": "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower_Dither",
+    "/Game/LowerSector_Mod/Models/Skybridge/Materials/M_Skybridge": "/Game/LowerSector_Mod/Models/Skybridge/Materials/M_Skybridge_Dither",
+    "/Game/LowerSector_Mod/Models/Tower8x/Materials/M_Tower8x": "/Game/LowerSector_Mod/Models/Tower8x/Materials/M_Tower8x_Dither",
+    "/Game/LowerSector_Mod/Models/Wall01/Materials/M_Wall01": "/Game/LowerSector_Mod/Models/Wall01/Materials/M_Wall01_Dither",
+    "/Game/LowerSector_Mod/Models/Wall6x/Materials/M_Wall6x": "/Game/LowerSector_Mod/Models/Wall6x/Materials/M_Wall6x_Dither",
+    "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop": "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop_Dither"
 }
 
 
