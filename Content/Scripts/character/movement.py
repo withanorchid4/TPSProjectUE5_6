@@ -70,6 +70,14 @@ class MovementComponent:
     
     def start_sprint(self):
         """开始冲刺（按住 Shift）"""
+        # 瞄准或射击时禁止冲刺
+        camera = getattr(self.owner, 'camera', None)
+        if camera and camera.is_aiming():
+            return
+        shooting = getattr(self.owner, 'shooting', None)
+        if shooting and shooting.is_firing():
+            return
+        
         self._is_sprinting = True
         self._set_max_walk_speed(self.JOG_SPEED)
         ue.Log(f"MovementComponent: Sprint ON (speed={self.JOG_SPEED})")
@@ -78,7 +86,6 @@ class MovementComponent:
         """停止冲刺（松开 Shift）"""
         self._is_sprinting = False
         self._set_max_walk_speed(self.WALK_SPEED)
-        ue.Log(f"MovementComponent: Sprint OFF (speed={self.WALK_SPEED})")
     
     def is_sprinting(self) -> bool:
         """是否正在冲刺"""

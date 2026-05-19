@@ -136,6 +136,15 @@ class CrosshairHUD(ue.HUD):
             reload_color = ue.LinearColor(1.0, 0.8, 0.0, 0.9)
             self.DrawText("RELOADING...", reload_color, text_x - 200.0, text_y - 55.0, None, 0.9, False)
 
+        # 魔法箭CD
+        cd = shooting.get_magic_arrow_cd()
+        if cd > 0.0:
+            cd_color = ue.LinearColor(1.0, 0.4, 0.4, 0.9)
+            self.DrawText(f"MAGIC {cd:.1f}s", cd_color, text_x - 200.0, text_y - 80.0, None, 0.9, False)
+        else:
+            ready_color = ue.LinearColor(0.4, 1.0, 0.6, 0.7)
+            self.DrawText("MAGIC READY", ready_color, text_x - 200.0, text_y - 80.0, None, 0.9, False)
+
     # ────────────────────────────────────────
     # Buff状态
     # ────────────────────────────────────────

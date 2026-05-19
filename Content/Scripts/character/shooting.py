@@ -36,6 +36,13 @@ class ShootingComponent:
         
         # 魔法箭ID计数器
         self._next_arrow_id = 0
+        
+        # 魔法箭发射后的速度恢复计时器
+        self._fire_speed_restore_timer = 0.0
+        
+        # 魔法箭CD
+        self.MAGIC_ARROW_CD = 10.0
+        self._magic_arrow_cd_remaining = 0.0
     
     def _get_current_time(self) -> float:
         """获取当前游戏时间"""
@@ -62,12 +69,35 @@ class ShootingComponent:
         """开始射击（按住鼠标左键）"""
         self._is_firing = True
         
+        # 射击时降速到步行，让持枪步行动画生效
+        self._apply_fire_speed()
+        
         # 立即发射第一颗子弹
         self.shoot()
     
     def stop_firing(self):
         """停止射击（松开鼠标左键）"""
         self._is_firing = False
+        
+        # 停止射击后恢复速度
+        self._restore_speed()
+    
+    def _apply_fire_speed(self):
+        """射击时降速到步行速度"""
+        movement = self.owner.CharacterMovement
+        if movement:
+            movement.MaxWalkSpeed = 300.0
+    
+    def _restore_speed(self):
+        """停止射击后恢复速度（优先恢复冲刺，否则步行）"""
+        movement_comp = getattr(self.owner, 'movement', None)
+        if movement_comp:
+            target_speed = movement_comp.JOG_SPEED if movement_comp.is_sprinting() else movement_comp.WALK_SPEED
+        else:
+            target_speed = 300.0
+        movement = self.owner.CharacterMovement
+        if movement:
+            movement.MaxWalkSpeed = target_speed
     
     def toggle_fire_mode(self):
         """切换射击模式（点射/连射）"""
@@ -91,7 +121,7 @@ class ShootingComponent:
     
     def tick(self, delta_time: float):
         """
-        每帧更新（用于连发射击 + 换弹计时）
+        每帧更新（用于连发射击 + 换弹计时 + 魔法箭速度恢复）
         """
         # 连发射击
         if self._is_firing:
@@ -102,6 +132,20 @@ class ShootingComponent:
             self._reload_timer -= delta_time
             if self._reload_timer <= 0.0:
                 self._finish_reload()
+        
+        # 魔法箭CD计时
+        if self._magic_arrow_cd_remaining > 0.0:
+            self._magic_arrow_cd_remaining -= delta_time
+            if self._magic_arrow_cd_remaining < 0.0:
+                self._magic_arrow_cd_remaining = 0.0
+        
+        # 魔法箭发射后的速度恢复计时
+        if self._fire_speed_restore_timer > 0.0:
+            self._fire_speed_restore_timer -= delta_time
+            if self._fire_speed_restore_timer <= 0.0:
+                self._fire_speed_restore_timer = 0.0
+                if not self._is_firing:
+                    self._restore_speed()
     
     TRACE_DISTANCE = 100000.0     # 射线检测距离
     GUN_DAMAGE = 10.0             # 枪械基础伤害
@@ -236,13 +280,26 @@ class ShootingComponent:
         """检查是否正在射击"""
         return self._is_firing
     
+    def get_magic_arrow_cd(self) -> float:
+        """获取魔法箭剩余CD（0表示可用）"""
+        return self._magic_arrow_cd_remaining
+    
     def fire_magic_arrow(self):
         """发射魔法箭"""
+        # CD检查
+        if self._magic_arrow_cd_remaining > 0.0:
+            return
+        
         from character.magic_arrow import MagicArrow
         
         controller = self.owner.GetController()
         if not controller:
             return
+        
+        # 发射时降速到步行
+        self._apply_fire_speed()
+        # 魔法箭是单次发射，短暂延时后恢复速度
+        self._fire_speed_restore_timer = 0.3
         
         # 和子弹一样的 LineTrace：从摄像机沿准星方向找命中点
         fire_rotation = controller.GetControlRotation()
@@ -294,6 +351,9 @@ class ShootingComponent:
             arrow_id = self._next_arrow_id
             arrow.arrow_id = arrow_id
             ue.LogWarning(f"ShootingComponent: Magic arrow fired! arrow_id={arrow_id}")
+            
+            # 启动CD
+            self._magic_arrow_cd_remaining = self.MAGIC_ARROW_CD
             
             # 网络同步：发送魔法箭射击事件（含命中点+箭矢ID）
             self._send_shoot_to_server(hit_location=target_location, weapon_type=1, arrow_id=arrow_id)

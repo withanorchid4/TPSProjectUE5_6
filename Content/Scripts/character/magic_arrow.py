@@ -19,7 +19,7 @@ class MagicArrow(ue.Actor, TickableMixin):
     MAX_FLIGHT_DISTANCE = 30000.0  # 10s * ARROW_SPEED
     STUN_RADIUS = 500.0       # 晕眩范围
     STUN_DURATION = 3.0        # 晕眩时长
-    COLLISION_RADIUS = 50.0
+    COLLISION_RADIUS = 12.0
     
     def __init_pyobj__(self):
         self.arrow_mesh = None
