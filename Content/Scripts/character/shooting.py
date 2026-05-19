@@ -107,11 +107,28 @@ class ShootingComponent:
     GUN_DAMAGE = 10.0             # 枪械基础伤害
     MUZZLE_OFFSET_FORWARD = 80.0  # 枪口前方偏移
 
+    def _extract_hit_actor(self, hit_data):
+        """从 HitResult 提取命中 Actor：Component (WeakPtr) → Get() → GetOwner()"""
+        if not hit_data or not hasattr(hit_data, 'bBlockingHit') or not hit_data.bBlockingHit:
+            return None, None
+        hit_location = hit_data.Location
+        comp_ptr = hit_data.Component
+        if comp_ptr and hasattr(comp_ptr, 'Get'):
+            comp = comp_ptr.Get()
+            if comp and hasattr(comp, 'GetOwner'):
+                return comp.GetOwner(), hit_location
+        return None, hit_location
+
+    def _is_enemy(self, actor):
+        """判断是否为可受伤的敌人"""
+        return actor is not None and hasattr(actor, 'take_damage')
+
     def shoot(self):
-        """执行射击（HitScan：LineTrace 射线检测）
+        """执行射击（HitScan：双射线检测）
         
-        从摄像机沿准星方向射线，命中后通过 HitResult.Component (WeakPtr).Get()
-        解引用拿到 Component，再 GetOwner() 拿到 Actor，直接扣血。
+        TPS 射击流程：
+        1. 从摄像机沿准星方向射线 → 确定瞄准目标点（只提供方向）
+        2. 从枪口往目标点射线 → 确定实际命中（敌人/地面/墙壁）
         """
         if not self.can_shoot():
             return False
@@ -126,14 +143,13 @@ class ShootingComponent:
             ue.LogWarning("ShootingComponent: No mesh!")
             return False
         
-        # 射线参数
+        # === 1) 摄像机射线：确定瞄准方向和目标点 ===
         cam_location = self.owner.camera.camera.GetWorldLocation() if (self.owner.camera and self.owner.camera.camera) else self.owner.GetActorLocation()
         fire_rotation = controller.GetControlRotation()
         cam_forward = ue.KismetMathLibrary.GetForwardVector(fire_rotation)
         trace_end = cam_location + cam_forward * self.TRACE_DISTANCE
         
-        # === LineTrace 射线检测 ===
-        hit_result = ue.KismetSystemLibrary.LineTraceSingle(
+        cam_hit_result = ue.KismetSystemLibrary.LineTraceSingle(
             self.owner, cam_location, trace_end,
             ue.ETraceTypeQuery.TraceTypeQuery2,
             False, [self.owner],
@@ -144,29 +160,44 @@ class ShootingComponent:
             0.0
         )
         
-        b_hit = False
-        hit_data = None
-        if isinstance(hit_result, tuple) and len(hit_result) == 2:
-            b_hit, hit_data = hit_result
+        cam_b_hit = False
+        cam_hit_data = None
+        if isinstance(cam_hit_result, tuple) and len(cam_hit_result) == 2:
+            cam_b_hit, cam_hit_data = cam_hit_result
         
-        # 从 HitResult 提取命中 Actor：Component (WeakPtr) → Get() → GetOwner()
-        hit_actor = None
-        hit_location = cam_location + cam_forward * 2000.0  # 默认远端点
+        # 瞄准目标点：cam 命中点或远处默认点
+        aim_target = cam_hit_data.Location if (cam_b_hit and cam_hit_data and hasattr(cam_hit_data, 'bBlockingHit') and cam_hit_data.bBlockingHit) else (cam_location + cam_forward * 5000.0)
         
-        if b_hit and hit_data and hasattr(hit_data, 'bBlockingHit') and hit_data.bBlockingHit:
-            hit_location = hit_data.Location
-            comp_ptr = hit_data.Component
-            if comp_ptr and hasattr(comp_ptr, 'Get'):
-                comp = comp_ptr.Get()
-                if comp and hasattr(comp, 'GetOwner'):
-                    hit_actor = comp.GetOwner()
+        # === 2) 枪口射线：从枪口往瞄准目标点，决定实际命中 ===
+        hand_location = mesh.GetSocketLocation(ue.Name("hand_r"))
+        muzzle_location = hand_location + cam_forward * self.MUZZLE_OFFSET_FORWARD
+        
+        muzzle_hit_result = ue.KismetSystemLibrary.LineTraceSingle(
+            self.owner, muzzle_location, aim_target,
+            ue.ETraceTypeQuery.TraceTypeQuery2,
+            False, [self.owner],
+            0,
+            False,
+            ue.LinearColor(0, 0, 1, 1),
+            ue.LinearColor(0, 1, 0, 1),
+            0.0
+        )
+        
+        muzzle_b_hit = False
+        muzzle_hit_data = None
+        if isinstance(muzzle_hit_result, tuple) and len(muzzle_hit_result) == 2:
+            muzzle_b_hit, muzzle_hit_data = muzzle_hit_result
+        
+        hit_actor, hit_location = self._extract_hit_actor(muzzle_hit_data) if muzzle_b_hit else (None, None)
+        if hit_location is None:
+            hit_location = aim_target
         
         # 伤害计算
         damage_multiplier = 1.0
         if hasattr(self.owner, 'buff_component') and self.owner.buff_component:
             damage_multiplier = self.owner.buff_component.get_attack_multiplier()
         
-        if hit_actor and hasattr(hit_actor, 'take_damage'):
+        if self._is_enemy(hit_actor):
             final_damage = self.GUN_DAMAGE * damage_multiplier
             hit_actor.take_damage(final_damage, self.owner)
             ue.Log(f"ShootingComponent: HitScan hit {hit_actor} for {final_damage:.1f} damage")
@@ -179,7 +210,6 @@ class ShootingComponent:
         from character.tracer_round import TracerRound
         world = self.owner.GetWorld()
         if world:
-            # 从枪口指向命中点的方向，而非摄像机朝向
             tracer_dir = hit_location - muzzle_location
             tracer_rotation = ue.KismetMathLibrary.MakeRotFromX(tracer_dir)
             tracer = world.SpawnActor(TracerRound, muzzle_location, tracer_rotation)
@@ -188,8 +218,10 @@ class ShootingComponent:
         
         if hasattr(self.owner, 'audio') and self.owner.audio:
             self.owner.audio.play_gunshot(muzzle_location)
-            if hit_actor:
+            if self._is_enemy(hit_actor):
                 self.owner.audio.play_enemy_hit(hit_location)
+            else:
+                self.owner.audio.play_surface_hit(hit_location)
         
         self.last_fire_time = self._get_current_time()
         self.current_ammo -= 1

@@ -89,6 +89,17 @@ class CameraComponent:
         """
         self.owner.AddControllerYawInput(yaw_delta)
         self.owner.AddControllerPitchInput(pitch_delta)
+        
+        # 限制俯仰角，防止仰头翻过去或低头不够
+        controller = self.owner.GetController()
+        if controller:
+            rot = controller.GetControlRotation()
+            pitch = rot.Pitch
+            if pitch > 180.0:
+                pitch -= 360.0
+            clamped = max(-80.0, min(80.0, pitch))
+            if abs(clamped - pitch) > 0.01:
+                controller.SetControlRotation(ue.Rotator(clamped, rot.Yaw, rot.Roll))
     
     def set_aiming(self, is_aiming: bool):
         """

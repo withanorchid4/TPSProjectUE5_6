@@ -130,6 +130,11 @@ class AudioManager:
         self._play_sound_at("enemy_hit", location, 0.7)
         self._spawn_particle_at("hit_explosion", location, 0.3)
 
+    def play_surface_hit(self, location):
+        """播放地面/墙壁命中音效 + 火花特效"""
+        self._play_sound_at("gunshot", location, 0.3)
+        self._spawn_particle_at("hit_explosion", location, 0.15)
+
     def play_enemy_death(self, location):
         """播放敌人死亡音效 + 爆炸特效"""
         self._play_sound_at("enemy_death", location, 0.8)
