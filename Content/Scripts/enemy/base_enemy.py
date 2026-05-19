@@ -62,6 +62,8 @@ class BaseEnemy(ue.Character):
         self.ai.on_stop = self._on_stop
         self.ai.on_stunned = self._on_stunned
         self.ai.on_stun_end = self._on_stun_end
+        self.ai.on_patrol_move = self._on_patrol_move
+        self.ai.on_patrol_stop = self._on_patrol_stop
         
         # 角色配置
         self.bUseControllerRotationYaw = False
@@ -197,6 +199,31 @@ class BaseEnemy(ue.Character):
         if movement:
             movement.MaxWalkSpeed = 600.0
     
+    def _on_patrol_move(self, target_location):
+        """巡逻移动 — 每帧AddMovementInput向目标点走"""
+        if self._is_stunned:
+            return
+        my_loc = self.GetActorLocation()
+        direction = target_location - my_loc
+        direction.Z = 0.0
+        length = ue.KismetMathLibrary.VSize(direction)
+        if length > 0.0:
+            direction = direction / length
+            self.AddMovementInput(direction, 1.0)
+            self._target_yaw = ue.KismetMathLibrary.MakeRotFromX(direction).Yaw
+        movement = self.CharacterMovement
+        if movement:
+            movement.MaxWalkSpeed = 200.0
+    
+    def _on_patrol_stop(self):
+        """巡逻停止"""
+        controller = self.GetController()
+        if controller:
+            controller.StopMovement()
+        movement = self.CharacterMovement
+        if movement:
+            movement.MaxWalkSpeed = 600.0
+    
     def _setup_weapon(self):
         """挂载武器网格并设置持枪动画"""
         mesh = self.GetMesh()
@@ -254,7 +281,6 @@ class BaseEnemy(ue.Character):
         # 死亡后：播放溶解动画，完毕后销毁
         if is_dead:
             self._death_timer -= delta_time
-            # 死亡动画结束后开始溶解
             if self._death_timer <= 0.0 and self._dissolve_mid:
                 self._dissolve_progress += delta_time / self.DISSOLVE_DURATION
                 self._dissolve_mid.SetScalarParameterValue(
@@ -263,14 +289,12 @@ class BaseEnemy(ue.Character):
                     self._spawn_pickup()
                     self.Destroy()
             elif self._death_timer <= 0.0 and not self._dissolve_mid:
-                # 无溶解材质的兜底：直接销毁
                 self._spawn_pickup()
                 self.Destroy()
             return
         
         # 网络驱动模式下不做本地AI/旋转
         if self._is_network_driven:
-            # 只处理 bIsHit 还原
             mesh = self.GetMesh()
             if mesh:
                 anim = mesh.GetAnimInstance()
@@ -281,6 +305,23 @@ class BaseEnemy(ue.Character):
                     elif anim.bIsHit:
                         self._pending_hit_reset = True
             return
+        
+        # 诊断：每2秒打印一次状态
+        if not hasattr(self, '_diag_t'):
+            self._diag_t = 0.0
+        self._diag_t -= delta_time
+        if self._diag_t <= 0:
+            self._diag_t = 2.0
+            movement = self.CharacterMovement
+            vel = movement.Velocity if movement else None
+            speed = ue.KismetMathLibrary.VSize(vel) if vel else 0
+            controller = self.GetController()
+            ctrl_type = type(controller).__name__ if controller else "None"
+            orient = movement.bOrientRotationToMovement if movement else "?"
+            max_spd = movement.MaxWalkSpeed if movement else "?"
+            ai_state = self.ai.state.value if self.ai else "?"
+            loc = self.GetActorLocation()
+            ue.Log(f"[Enemy DIAG] id={self.enemy_id} state={ai_state} ctrl={ctrl_type} pos=({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f}) speed={speed:.1f}/{max_spd} orient={orient}")
         
         # 更新AI
         if self.ai:
@@ -304,7 +345,7 @@ class BaseEnemy(ue.Character):
             if player:
                 self._face_target(player)
         
-        # 下一帧还原 bIsHit（延迟一帧，确保 AnimBP 能读到 True）
+        # 下一帧还原 bIsHit
         mesh = self.GetMesh()
         if mesh:
             anim = mesh.GetAnimInstance()
@@ -411,6 +452,13 @@ class BaseEnemy(ue.Character):
                 # 血量减少（主机端已扣血） → 同步（网络来源，不再广播）
                 diff = self.health.current_hp - hp
                 self.health.take_damage(diff, from_network=True)
+        
+        # 巡逻速度同步（IDLE时慢速，非IDLE时恢复）
+        if movement:
+            if ai_state == 0:
+                movement.MaxWalkSpeed = 200.0
+            else:
+                movement.MaxWalkSpeed = 600.0
         
         # AI状态 + 动画
         self._net_ai_state = ai_state

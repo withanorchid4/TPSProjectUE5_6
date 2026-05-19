@@ -213,20 +213,7 @@ class NetClient:
                     ue.LogError(f"NetClient: Callback error for msg {msg_id}: {e}")
 
         # 调试：统计收包频率
-        if msg_count > 0:
-            import time
-            now = time.time()
-            if not hasattr(self, '_ticker_msg_count'):
-                self._ticker_msg_count = 0
-                self._ticker_msg_time = now
-                self._ticker_call_count = 0
-            self._ticker_msg_count += msg_count
-            self._ticker_call_count += 1
-            if now - self._ticker_msg_time >= 1.0:
-                ue.LogWarning(f"[SYNC] NetClient ticker: {self._ticker_call_count}次/s, 处理消息: {self._ticker_msg_count}/s")
-                self._ticker_msg_count = 0
-                self._ticker_call_count = 0
-                self._ticker_msg_time = now
+
 
         return True  # 继续 ticker
 

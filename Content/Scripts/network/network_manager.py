@@ -265,15 +265,7 @@ class NetworkManager:
 
         self._client.send_msg(tps_pb2.CS_MOVE, msg.SerializeToString())
 
-        # 调试：统计每秒发送次数
-        if not hasattr(self, '_send_count'):
-            self._send_count = 0
-            self._send_count_time = now
-        self._send_count += 1
-        if now - self._send_count_time >= 1.0:
-            ue.LogWarning(f"[SYNC] A发送: {self._send_count}/s")
-            self._send_count = 0
-            self._send_count_time = now
+
 
     def send_shoot(self, hit_location=None, weapon_type=0, arrow_id=0):
         """发送射击同步 — 传武器类型 + 命中点 + 箭矢ID"""
@@ -567,17 +559,7 @@ class NetworkManager:
         result = tps_pb2.ScPlayerStates()
         result.ParseFromString(data)
 
-        # 调试：统计每秒接收次数
-        import time
-        now = time.time()
-        if not hasattr(self, '_recv_count'):
-            self._recv_count = 0
-            self._recv_count_time = now
-        self._recv_count += 1
-        if now - self._recv_count_time >= 1.0:
-            ue.LogWarning(f"[SYNC] B接收: {self._recv_count}/s")
-            self._recv_count = 0
-            self._recv_count_time = now
+
 
         for p in result.players:
             if p.player_id == self._self_player_id:

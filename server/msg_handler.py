@@ -259,17 +259,7 @@ def handle_move(server, session, data):
             states = tps_pb2.ScPlayerStates()
             _fill_player_state(states.players.add(), p)
 
-            # 调试：统计服务端每秒转发次数
-            import time
-            now = time.time()
-            if not hasattr(server, '_fwd_count'):
-                server._fwd_count = 0
-                server._fwd_count_time = now
-            server._fwd_count += 1
-            if now - server._fwd_count_time >= 1.0:
-                print(f"[SYNC] 服务端转发: {server._fwd_count}/s")
-                server._fwd_count = 0
-                server._fwd_count_time = now
+
 
             return [(MsgId.SC_PLAYER_STATES, states.SerializeToString(), session)]
 
