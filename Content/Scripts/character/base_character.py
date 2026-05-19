@@ -63,6 +63,21 @@ class BaseCharacter(ue.Character):
         # 初始化组件
         self._init_components()
         
+        # 预热魔法箭：发射一根用于触发Shader编译和纹理streaming
+        self._warmup_arrow = None
+        try:
+            from character.magic_arrow import MagicArrow
+            loc = self.GetActorLocation()
+            rot = self.GetActorRotation()
+            arrow = self.GetWorld().SpawnActor(MagicArrow, loc, rot)
+            if arrow:
+                arrow.SetOwner(self)
+                arrow._visual_only = True  # 禁用碰撞和命中逻辑
+                self._warmup_arrow = arrow
+                ue.Log("BaseCharacter: warmup magic arrow spawned")
+        except Exception as e:
+            ue.LogWarning(f"BaseCharacter: warmup arrow failed: {e}")
+        
         # 初始化武器状态
         self._is_weapon_drawn = False
         self._b_switch_weapon = False
@@ -398,6 +413,12 @@ class BaseCharacter(ue.Character):
         # 防护：ReceiveTick 可能在 ReceiveBeginPlay 之前执行
         if not getattr(self, '_initialized', False):
             return
+        
+        # 销毁预热魔法箭（第一帧后Shader和纹理已触发加载）
+        warmup = getattr(self, '_warmup_arrow', None)
+        if warmup is not None:
+            warmup.Destroy()
+            self._warmup_arrow = None
         
         # 检查 GameMode 延迟标记，在玩家tick中创建结算Widget
         from system.game_mode import _instance as game_mode

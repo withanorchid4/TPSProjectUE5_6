@@ -79,7 +79,7 @@ class MagicArrow(ue.Actor, TickableMixin):
         self.arrow_mesh = ue.NewObject(
             ue.StaticMeshComponent, self, "ArrowMesh"
         )
-        self.arrow_mesh.RegisterComponent()
+        # self.arrow_mesh.RegisterComponent()
         # 先禁用碰撞再设网格，避免默认碰撞干扰根碰撞球
         self.arrow_mesh.SetCollisionEnabled(0)  # NoCollision
         
@@ -105,6 +105,7 @@ class MagicArrow(ue.Actor, TickableMixin):
                 ue.EAttachmentRule.KeepRelative,
                 False
             )
+        self.arrow_mesh.RegisterComponent()
     
     def _setup_trail(self):
         """挂载冰霜拖尾 Niagara 特效"""

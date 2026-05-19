@@ -39,8 +39,8 @@ class EnemyAIComponent:
         ai.tick(delta_time)
     """
     
-    def __init__(self, owner, detect_range=800.0, attack_range=150.0,
-                 lose_range=1500.0, attack_cooldown=1.5, move_speed=300.0,
+    def __init__(self, owner,                  detect_range=2000.0, attack_range=150.0,
+                 lose_range=4000.0, attack_cooldown=1.5, move_speed=300.0,
                  patrol_radius=500.0, patrol_wait_time=2.5):
         self.owner = owner
         self.state = EnemyState.IDLE
@@ -241,12 +241,19 @@ class EnemyAIComponent:
     
     def _tick_stunned(self):
         if self._stun_timer <= 0:
-            self.state = EnemyState.IDLE
-            self._patrol_phase = _PatrolPhase.WAIT
-            self._patrol_wait_timer = self.patrol_wait_time
-            if self.on_stun_end:
-                self.on_stun_end()
-            ue.Log(f"EnemyAI: STUNNED → IDLE")
+            dist = self._get_distance_to_player()
+            if dist < self.lose_range:
+                self.state = EnemyState.CHASE
+                if self.on_stun_end:
+                    self.on_stun_end()
+                ue.Log(f"EnemyAI: STUNNED → CHASE (dist={dist:.0f})")
+            else:
+                self.state = EnemyState.IDLE
+                self._patrol_phase = _PatrolPhase.WAIT
+                self._patrol_wait_timer = self.patrol_wait_time
+                if self.on_stun_end:
+                    self.on_stun_end()
+                ue.Log(f"EnemyAI: STUNNED → IDLE (dist={dist:.0f})")
     
     def set_stunned(self, duration: float):
         """进入晕眩状态"""
