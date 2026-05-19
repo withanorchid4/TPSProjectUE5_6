@@ -81,34 +81,43 @@ class DitherOcclusion:
 
         hit_actors = set()
         for target_loc in (head_loc, waist_loc):
-            direction = target_loc - cam_loc
-            distance = ue.KismetMathLibrary.VSize(direction)
-            if distance <= 0.0:
-                continue
+            trace_start = cam_loc
+            ignore_actors = [self._owner]
+            for _ in range(10):  # 最多穿透10个遮挡物
+                direction = target_loc - trace_start
+                distance = ue.KismetMathLibrary.VSize(direction)
+                if distance <= 0.0:
+                    break
 
-            hit_result = ue.KismetSystemLibrary.LineTraceMulti(
-                self._owner,
-                cam_loc,
-                target_loc,
-                ue.ETraceTypeQuery.TraceTypeQuery1,  # Visibility
-                False,  # bTraceComplex
-                [self._owner],  # actors to ignore
-                0,      # EDrawDebugTrace::None
-                True,   # bIgnoreSelf
-            )
+                hit_result = ue.KismetSystemLibrary.LineTraceSingle(
+                    self._owner,
+                    trace_start,
+                    target_loc,
+                    ue.ETraceTypeQuery.TraceTypeQuery1,  # Visibility
+                    False,  # bTraceComplex
+                    ignore_actors,
+                    0,      # EDrawDebugTrace::None
+                    True,   # bIgnoreSelf
+                )
 
-            hit, hit_infos = hit_result
-            if hit and hit_infos:
-                for hit_info in hit_infos:
-                    if not (hasattr(hit_info, 'bBlockingHit') and hit_info.bBlockingHit):
-                        continue
-                    comp_ptr = hit_info.Component
-                    if comp_ptr and hasattr(comp_ptr, 'Get'):
-                        comp = comp_ptr.Get()
-                        if comp and hasattr(comp, 'GetOwner'):
-                            hit_actor = comp.GetOwner()
-                            if hit_actor:
-                                hit_actors.add(hit_actor)
+                b_hit, hit_data = hit_result if isinstance(hit_result, tuple) and len(hit_result) == 2 else (False, None)
+                if not (b_hit and hit_data and hasattr(hit_data, 'bBlockingHit') and hit_data.bBlockingHit):
+                    break
+
+                comp_ptr = hit_data.Component
+                hit_actor = None
+                if comp_ptr and hasattr(comp_ptr, 'Get'):
+                    comp = comp_ptr.Get()
+                    if comp and hasattr(comp, 'GetOwner'):
+                        hit_actor = comp.GetOwner()
+
+                if hit_actor:
+                    hit_actors.add(hit_actor)
+                    ignore_actors.append(hit_actor)
+                    # 从命中点稍微偏移继续下一次trace
+                    trace_start = hit_data.Location + (target_loc - hit_data.Location) * 0.01
+                else:
+                    break
 
         # 对命中的actor做替换
         for actor in hit_actors:
