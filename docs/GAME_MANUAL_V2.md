@@ -103,10 +103,6 @@
 
 第一次 cam_trace 从摄像机位置沿准星方向发射，目的是确定瞄准目标点（只提供方向，不决定命中）。第二次 muzzle_trace 从枪口位置往 cam_trace 的命中点发射，决定实际命中什么。
 
-之所以需要双射线，是因为 TPS 中存在"近距离盲区"问题：摄像机在角色后上方，当敌人很近时，准星虽然对着敌人方向，但射线从摄像机出发会越过敌人头顶打到身后地面。双射线修正后，cam_trace 只管方向，muzzle_trace 从枪口出发能命中准星和枪口之间的敌人。
-
-muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzzle 只需要检查枪口到 cam 命中点之间有没有东西，避免命中 cam 射线看不到的物体（如墙后敌人），保证视觉一致性。
-
 射线使用 Camera 通道（TraceTypeQuery2），忽略玩家自身。命中 Actor 通过 `HitResult.Component (WeakPtr) → .Get() → Component → .GetOwner()` 提取，使用 `hasattr(actor, 'take_damage')` 判定是否为可受伤目标（NePy 中 isinstance 不可靠）。
 
 **点射/连射切换**：C键切换。点射模式射击间隔0.15秒，连射0.1秒。`ShootingComponent` 维护 `_is_firing` 状态（鼠标按下/松开），`tick()` 每帧检查 `_is_firing` 并调用 `shoot()`，`can_shoot()` 中通过 `fire_rate` 控制射击间隔。射击时强制降速到300（持枪步行动画），停止射击后恢复。
@@ -119,7 +115,7 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 **实现**：
 
-**魔法箭 Actor**（`MagicArrow`）：使用 ProjectileMovementComponent 的投射物，速度3000，无重力（ProjectileGravityScale=0.0）。箭体使用 Cylinder StaticMesh 以-90° pitch 沿前方，挂载自发光材质 `LightArrow`，以及 `NS_ArrowTrail_Magic` 冰霜拖尾 Niagara 特效。使用 `TickableMixin` + `ue.AddTicker` 替代 ReceiveTick（NePy 子类化不支持 ReceiveTick）。
+**魔法箭 Actor**（`MagicArrow`）：使用 ProjectileMovementComponent 的投射物，速度3000，无重力（ProjectileGravityScale=0.0）。箭体挂载自发光材质 `LightArrow`，以及 `NS_ArrowTrail_Magic` 冰霜拖尾 Niagara 特效。
 
 **碰撞**：SphereComponent（半径12）做根组件，碰撞延迟0.05秒后开启（避免出生时撞到玩家自身），使用 `IgnoreActorWhenMoving(owner, True)` 忽略发射者。命中任何物体后触发 AOE 效果。
 
@@ -145,17 +141,17 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 ### 基础要求7：场景中有一些可以被攻击的敌人，可以控制角色使用武器攻击敌人，击杀直至消失
 
-**实现**：敌人基类 `BaseEnemy` 继承 `ue.Character`，有 `HealthComponent` 管理 HP，`take_damage()` 扣血，死亡回调播放死亡 Montage 并在70%进度时开始溶解效果（避开末尾 blend-out 过渡回 idle）。溶解使用 `M_Dissolve` 材质 + `CreateDynamicMaterialInstance`，`DissolveAmount` 从0到1渐变2秒。溶解完成后调用 `Destroy()` 销毁 Actor 并在原位 Spawn 掉落道具。
+**实现**：敌人基类 `BaseEnemy` 继承 `ue.Character`，有 `HealthComponent` 管理 HP，`take_damage()` 扣血，死亡回调播放死亡 Montage 并播放溶解效果。溶解使用 `M_Dissolve` 材质 + `CreateDynamicMaterialInstance`，`DissolveAmount` 从0到1渐变2秒。溶解完成后调用 `Destroy()` 销毁 Actor 并在原位 Spawn 掉落道具。
 
 ---
 
 ### 基础要求8：加入关卡设计，支持两类关卡，能够顺利切换关卡到下一关
 
-**实现**：`TPSGameMode` 管理3个关卡：MainMenu（主菜单+登录）、Level1（5敌人）、Level2（8敌人）。GameMode 在 `ReceiveBeginPlay` 中通过关卡名判断当前关卡编号（"Level1"→1, "Level2"→2），并调用 `GetAllActorsOfClass(BaseEnemy)` 统计场景中的敌人数量。
+**实现**：`TPSGameMode` 管理3个关卡：MainMenu（主菜单+登录）、Level1（4敌人）、Level2（4敌人）。GameMode 在 `ReceiveBeginPlay` 中通过关卡名判断当前关卡编号（"Level1"→1, "Level2"→2），并调用 `GetAllActorsOfClass(BaseEnemy)` 统计场景中的敌人数量。
 
-敌人死亡时 `GameMode.on_enemy_killed()` 递减计数，当 `alive_enemies` 降为0时触发胜利：Level1 胜利后调用 `ue.GameplayStatics.OpenLevel("Level2")` 切换关卡，Level2 胜利后显示胜利结算 Widget。玩家死亡则显示失败结算 Widget。两个关卡使用同一套 LowerSector_Mod 城市场景，但敌人放置位置和数量不同。
+敌人死亡时 `GameMode.on_enemy_killed()` 递减计数，当 `alive_enemies` 降为0时触发胜利：Level1 胜利后调用 `ue.GameplayStatics.OpenLevel("Level2")` 切换关卡，Level2 胜利后显示胜利结算 Widget。玩家死亡则显示失败结算 Widget。
 
-结算界面（`WBP_GameResult`）在玩家 Tick 中创建（使用 `_pending_result_widget` 标记延迟一帧），避免在 AI 回调中创建 Widget 导致的时序问题。结算界面显示胜利/失败，可重试当前关卡或返回主菜单。
+结算界面（`WBP_GameResult`）在玩家 Tick 中创建（使用 `_pending_result_widget` 标记延迟一帧）结算界面显示胜利/失败，可重试或返回主菜单。
 
 ---
 
@@ -163,7 +159,7 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 **实现**：
 
-**近战敌人**（`MeleeEnemy`）：HP=80，detect_range=800，attack_range=150，attack_cooldown=1.5s，move_speed=300。不持枪（AnimBP `bHasWeapon=False`），攻击时播放 ComboAttack Montage，延迟0.5秒到出拳帧时检测玩家距离（attack_range×1.4容差），在范围内造成15伤害。延迟扣血的设计是为了视觉上等动画播到出拳帧再扣血，否则敌人还没出拳玩家就掉血了。
+**近战敌人**（`MeleeEnemy`）：HP=80，detect_range=800，attack_range=150，attack_cooldown=1.5s，move_speed=300。不持枪（AnimBP `bHasWeapon=False`），攻击时播放 ComboAttack Montage，延迟0.5秒到出拳帧时检测玩家距离（attack_range×1.4容差），在范围内造成15伤害。
 
 **远程敌人**（`RangedEnemy`）：HP=60，detect_range=1500，attack_range=800，attack_cooldown=2.0s，move_speed=200。持枪（AnimBP `bHasWeapon=True`，挂载 SM_AR4），攻击时在身体前方80cm Spawn `EnemyProjectile`（SphereComponent 碰撞+ProjectileMovement，速度1500），命中玩家造成10伤害。EnemyProjectile 使用 `IgnoreActorWhenMoving(owner)` 忽略发射者，Overlap 碰撞玩家后扣血并销毁。
 
@@ -184,8 +180,6 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 **STUNNED状态**：被魔法箭命中后进入，`_stun_timer` 倒计时3秒，同时 `mesh.GlobalAnimRateScale=0.0` 冻结动画。恢复时检测与玩家的距离：在 lose_range 内→CHASE，否则→IDLE。这样晕眩恢复后敌人会根据玩家位置做出合理判断，而不是统一回 IDLE。
 
 **DEAD状态**：血量归零后进入，停止所有 AI 逻辑。
-
-**平滑旋转**：敌人不使用 `bOrientRotationToMovement`（因为 `AddMovementInput` 不触发该属性），而是手动实现：`_face_target()` 计算目标朝向并设置 `_target_yaw`，`ReceiveTick` 中以 `rotation_speed=15` 做插值旋转（每帧朝目标角度靠近1/15）。
 
 ---
 
@@ -214,7 +208,7 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 **实现**：`PickupItem` Actor，敌人死亡时在死亡位置生成。50%弹药箱（+30储备弹药）/ 50%急救包（+50HP）。
 
-道具使用 SphereComponent（半径80，OverlapAllDynamic）检测玩家碰触。为避免碰撞球和模型互相干扰，模型组件的碰撞设为 NoCollision。道具使用 RotatingMovementComponent 自动旋转（90°/秒），通过 BoundingBox 中心偏移补偿模型原点偏移（避免旋转时公转）。道具使用 `SetLifeSpan(15)` 设定15秒后自动销毁（引擎内部倒计时，不依赖 Tick）。
+道具使用 SphereComponent（半径80，OverlapAllDynamic）检测玩家碰触。为避免碰撞球和模型互相干扰，模型组件的碰撞设为 NoCollision。道具使用 RotatingMovementComponent 自动旋转（90°/秒），设定15秒后自动销毁（引擎内部倒计时，不依赖 Tick）。
 
 拾取逻辑在 `_on_overlap` 中：检查碰触者是否有 `shooting` 和 `health` 属性，弹药箱调用 `shooting.add_ammo(30)`，急救包调用 `health.heal(50)`，拾取后立即 `Destroy()`。
 

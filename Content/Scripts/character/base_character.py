@@ -163,6 +163,7 @@ class BaseCharacter(ue.Character):
             self._net_manager.on_magic_arrow_hit = self._on_net_magic_arrow_hit
             self._net_manager.on_enemy_states = self._on_net_enemy_states
             self._net_manager.on_enemy_event = self._on_net_enemy_event
+            self._net_manager.on_pickup_result = self._on_net_pickup_result
 
             if nm.is_in_game:
                 # 已在游戏中（关卡切换后 / LoginPanel流程SC_ENTER_GAME已到达）：重新初始化敌人同步
@@ -913,6 +914,25 @@ class BaseCharacter(ue.Character):
         elif event_type == tps_pb2.ENEMY_STUNNED:
             if enemy.ai:
                 enemy.ai.set_stunned(value)
+
+    def _on_net_pickup_result(self, pickup_dict):
+        """网络拾取回调 — 其他玩家捡了道具，本地销毁对应道具"""
+        player_id = pickup_dict.get("player_id", 0)
+        item_uid = pickup_dict.get("item_uid", 0)
+
+        # 忽略自己发起的拾取（本地已经销毁了）
+        if self._net_manager and player_id == self._net_manager.self_player_id:
+            return
+
+        # 查找并销毁对应 item_uid 的 PickupItem
+        from pickup.pickup_item import PickupItem
+        actors = ue.GameplayStatics.GetAllActorsOfClass(self, PickupItem)
+        if actors:
+            for actor in actors:
+                if hasattr(actor, 'item_uid') and actor.item_uid == item_uid:
+                    actor.Destroy()
+                    ue.LogWarning(f"BaseCharacter: Destroyed remote pickup item_uid={item_uid}")
+                    break
 
     @ue.ufunction(override=True)
     def ReceiveEndPlay(self, end_play_reason):

@@ -11,6 +11,8 @@
 
 import ue
 
+_next_item_uid = 1
+
 
 @ue.uclass()
 class PickupItem(ue.Actor):
@@ -29,9 +31,12 @@ class PickupItem(ue.Actor):
     HEALTH_MESH_PATH = "/Game/Weapons/supply_crates-Vicevoxel-FBX/VV_aidbox_001.VV_aidbox_001"
 
     def __init_pyobj__(self):
+        global _next_item_uid
         self.collision_sphere = None
         self.pickup_mesh = None
         self.pickup_type = None  # 在 ReceiveBeginPlay 中随机决定
+        self.item_uid = _next_item_uid
+        _next_item_uid += 1
 
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -110,6 +115,11 @@ class PickupItem(ue.Actor):
         else:
             actual = health.heal(self.HP_REFILL)
             ue.LogWarning(f"PickupItem: {other_actor} picked up +{actual:.0f} HP")
+
+        # 通知网络其他客户端销毁该道具
+        net_manager = getattr(other_actor, '_net_manager', None)
+        if net_manager:
+            net_manager.send_pickup(self.item_uid)
 
         self.Destroy()
 

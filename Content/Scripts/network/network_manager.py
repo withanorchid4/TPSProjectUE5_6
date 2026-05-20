@@ -67,6 +67,7 @@ class NetworkManager:
         self.on_shoot_result = None     # → callback(shoot_dict)
         self.on_action = None           # → callback(action_dict)
         self.on_enemy_event = None      # → callback(event_dict)
+        self.on_pickup_result = None     # → callback(pickup_dict)
         self.on_magic_arrow_hit = None  # → callback(hit_dict)
         self.on_enemy_states = None    # → callback(enemies_list)
         self.on_disconnect = None       # → callback()
@@ -93,6 +94,7 @@ class NetworkManager:
         self._client.register_callback(tps_pb2.SC_SHOOT_RESULT, self._on_shoot_result)
         self._client.register_callback(tps_pb2.SC_ACTION, self._on_action)
         self._client.register_callback(tps_pb2.SC_ENEMY_EVENT, self._on_enemy_event)
+        self._client.register_callback(tps_pb2.SC_PICKUP_RESULT, self._on_pickup_result)
         self._client.register_callback(tps_pb2.SC_MAGIC_ARROW_HIT, self._on_magic_arrow_hit)
         self._client.register_callback(tps_pb2.SC_ENEMY_STATES, self._on_enemy_states)
         self._client.set_disconnect_callback(self._on_server_disconnect)
@@ -295,6 +297,15 @@ class NetworkManager:
         msg = tps_pb2.CsAction()
         msg.action_type = action_type
         self._client.send_msg(tps_pb2.CS_ACTION, msg.SerializeToString())
+
+    def send_pickup(self, item_uid):
+        """发送拾取同步 — 通知服务端道具已被拾取，广播给其他客户端销毁"""
+        if not self.is_in_game:
+            return
+
+        msg = tps_pb2.CsPickup()
+        msg.item_uid = item_uid
+        self._client.send_msg(tps_pb2.CS_PICKUP, msg.SerializeToString())
 
     def send_magic_arrow_hit(self, arrow_id, aoe_location):
         """发送魔法箭命中事件"""
@@ -664,6 +675,23 @@ class NetworkManager:
                 self.on_enemy_event(event_dict)
             except Exception as e:
                 ue.LogError(f"NetworkManager: on_enemy_event callback error: {e}")
+
+    def _on_pickup_result(self, msg_id, data):
+        """处理拾取同步广播"""
+        result = tps_pb2.ScPickupResult()
+        result.ParseFromString(data)
+
+        pickup_dict = {
+            "success": result.success,
+            "player_id": result.player_id,
+            "item_uid": result.item_uid,
+        }
+
+        if self.on_pickup_result:
+            try:
+                self.on_pickup_result(pickup_dict)
+            except Exception as e:
+                ue.LogError(f"NetworkManager: on_pickup_result callback error: {e}")
 
     def _on_magic_arrow_hit(self, msg_id, data):
         """处理魔法箭命中广播"""
