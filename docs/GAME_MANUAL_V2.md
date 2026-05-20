@@ -272,7 +272,7 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 | AntiAliasingQuality | 0 | 1 | 2 |
 | ViewDistanceQuality | 0 | 1 | 2 |
 
-**即时生效**：通过 `KismetSystemLibrary.ExecuteConsoleCommand` 执行 `sg.XxxQuality` 控制台命令，所有组统一使用 `SetByConsole` 优先级。`ResolutionQuality` 不支持 `sg.ResolutionQuality` 命令，改用 `r.ScreenPercentage` 直接设置百分比。
+**即时生效**：通过 `KismetSystemLibrary.ExecuteConsoleCommand` 执行 `sg.XxxQuality` 控制台命令，所有组统一使用 `SetByConsole` 优先级。
 
 **持久化**：写入 `GameUserSettings.ini` 的 `[/Script/Engine.GameUserSettings]` 段，下次启动时引擎自动读取恢复。
 
@@ -284,17 +284,13 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 ### 基础要求16：灵活应用UE的材质系统，编写特殊的材质效果
 
-**实现**：共实现了5种自定义材质效果：
+**实现**：使用材质共完成了下面几种种自定义材质效果：
 
 1. **M_Dissolve（溶解材质）**：敌人死亡时替换所有材质 slot 为溶解 MID。`DissolveAmount` 从0到1渐变2秒，边缘有发光 Emissive 效果，随溶解进度从脚到头逐渐消失。
 
-2. **LightArrow（自发光箭体）**：魔法箭的 Emissive 材质，圆柱体网格发光效果。
+2. **M_BuffGlow（Buff发光材质）**：OverlayMaterial 方式挂载到角色 Mesh，`GlowColor` 参数控制颜色（ATK↑ 金色/ATK↓ 红色），`GlowIntensity` 控制强度与层数正比，剩余≤3秒时通过 Python 每0.1秒在0和当前强度之间切换实现闪烁。
 
-3. **M_BuffGlow（Buff发光材质）**：OverlayMaterial 方式挂载到角色 Mesh，`GlowColor` 参数控制颜色（ATK↑ 金色/ATK↓ 红色），`GlowIntensity` 控制强度与层数正比，剩余≤3秒时通过 Python 每0.1秒在0和当前强度之间切换实现闪烁。
-
-4. **M_damageOverlay（受伤泛红后处理）**：PostProcess 材质，`DamageIntensity` 参数控制泛红强度。受伤时设为0.5，然后以0.5秒线性淡出到0。通过查找场景中已有的 PostProcessVolume 或 Spawn 新的 PPV，使用 `AddOrUpdateBlendable` 挂载 MID。
-
-5. **Dither材质（30+种）**：遮挡半透明效果，见下文 Dither 详述。批量转换脚本 `Scripts/batch_convert_dither.py` 扫描 `/Game/LowerSector_Mod/Models` 下所有材质，自动生成 Dither 版本：Blend Mode 改为 Masked，添加 `FadeOpacity` 标量参数，连接 `DitherTemporalAA` 函数到 Opacity Mask。映射表见 `docs/dither_material_mapping.md`。
+3. **Dither材质（30+种）**：遮挡半透明效果，见下文 Dither 详述。批量转换脚本 `Scripts/batch_convert_dither.py` 扫描 `/Game/LowerSector_Mod/Models` 下所有材质，自动生成 Dither 版本：Blend Mode 改为 Masked，添加 `FadeOpacity` 标量参数，连接 `DitherTemporalAA` 函数到 Opacity Mask。
 
 ---
 
@@ -302,10 +298,9 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 
 **实现**：
 
-- **光照**：使用 Lightmass 烘焙静态间接光照（静态物体使用 Lightmap），DirectionalLight 设为 Stationary 带级联阴影映射（CSM），High 档位启用4级 CSM + VSM。场景中还有 SkyLight 提供天光照明，ExponentialHeightFog 提供大气散射效果。
-- **Lumen**：High 档位启用 Lumen GI 和 Lumen 反射，对动态物体（角色、敌人）提供实时间接光照和反射效果。
-- **后处理**：PostProcessVolume 中挂载受伤泛红材质（M_damageOverlay），提供 Bloom、Eye Adaptation 等标准后处理效果。
-- **Niagara**：魔法箭拖尾（NS_ArrowTrail_Magic）、命中AOE特效（NS_Basic_6）、枪口火花/命中爆炸（P_Explosion）等粒子系统。
+- **光照**：使用 Lightmass 烘焙静态间接光照，出于烘焙时间考虑，并未为每个静态网格分配合适的lightmap resolution。
+- **Megalights**：在第二个关卡中，灯光较多，使用Megalights来支持多光源直接光照和阴影。
+- **后处理**：PostProcessVolume 中挂载受伤泛红材质（M_damageOverlay），使用 Bloom 等标准后处理效果。
 
 ---
 
@@ -314,7 +309,7 @@ muzzle_trace 的终点设为 cam 命中点而非同样100000远，是因为 muzz
 **实现**：在开发过程中使用 `stat fps` 和 `stat unit` 控制台命令监控帧率和各线程耗时，使用 Unreal Insights 对 CPU 各线程、GPU 和内存进行简单分析。
 
 主要关注点：
-- 游戏逻辑全在 Python 端运行，每帧 Tick 中 Dither 双射线检测是较高开销操作（每帧2条射线 × 最多10次穿透迭代）
+- 在使用lumen时，运行时性能瓶颈在GPU端，每帧的GPU时间大约为15ms，关闭lumen换用光照烘焙之后GPU时间大约为9ms，其中3.8ms在处理megalights
 - AI 状态机 `GetAllActorsOfClass` 每帧查找玩家有一定开销，但敌人数量有限（最多8个）影响不大
 - `stat unit` 观察 Game/Draw/RHI/GPU 各线程时间，确保帧率在60fps以上
 

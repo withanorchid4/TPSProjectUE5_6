@@ -55,12 +55,12 @@ class TPSGameMode(ue.GameModeBase):
         self._level_complete = False
         self._count_enemies()
 
-        if "Level1" in level_name:
-            self.current_level = 1
-        elif "Level2" in level_name:
-            self.current_level = 2
+        if "Level3" in level_name:
+            self.current_level = 3
+        elif "Level4" in level_name:
+            self.current_level = 4
         else:
-            self.current_level = 1
+            self.current_level = 3
 
         elapsed = time.time() - t0
         ue.LogWarning(f"[{ts}] TPSGameMode: Level {self.current_level} started, enemies={self.alive_enemies}, Python init took {elapsed:.3f}s")
@@ -111,7 +111,7 @@ class TPSGameMode(ue.GameModeBase):
         self._game_result = "victory"
         ue.LogWarning(f"TPSGameMode: Level {self.current_level} VICTORY!")
 
-        if self.current_level == 1:
+        if self.current_level == 3:
             self.next_level()
         else:
             # 延迟到下一帧玩家tick中创建Widget，与死亡逻辑一致
@@ -129,8 +129,8 @@ class TPSGameMode(ue.GameModeBase):
 
     def retry_level(self):
         """重新挑战当前关卡"""
-        level_names = {1: "Level1", 2: "Level2"}
-        name = level_names.get(self.current_level, "Level1")
+        level_names = {3: "Level3", 4: "Level4"}
+        name = level_names.get(self.current_level, "Level3")
         ue.GameplayStatics.OpenLevel(self, name)
 
     def back_to_menu(self):
@@ -138,9 +138,9 @@ class TPSGameMode(ue.GameModeBase):
         ue.GameplayStatics.OpenLevel(self, "MainMenu")
 
     def next_level(self):
-        """进入下一关（仅Level1胜利时）"""
-        if self.current_level == 1:
-            ue.GameplayStatics.OpenLevel(self, "Level2")
+        """进入下一关（仅Level3胜利时）"""
+        if self.current_level == 3:
+            ue.GameplayStatics.OpenLevel(self, "Level4")
 
     def _deferred_show_menu(self, delta_time):
         """延迟一帧显示菜单（由 AddTicker 调用，返回 False 停止）"""
@@ -194,11 +194,11 @@ class TPSGameMode(ue.GameModeBase):
 
     def _on_login_enter_game(self):
         """进入游戏：加载关卡"""
-        ue.LogWarning("TPSGameMode: Login complete, loading Level1...")
+        ue.LogWarning("TPSGameMode: Login complete, loading Level3...")
         if self._main_menu_panel:
             self._main_menu_panel.destroy()
             self._main_menu_panel = None
-        ue.GameplayStatics.OpenLevel(self, "Level1")
+        ue.GameplayStatics.OpenLevel(self, "Level3")
 
     def _restore_game_input(self):
         """恢复游戏输入模式"""
