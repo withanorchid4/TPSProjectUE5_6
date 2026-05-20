@@ -18,7 +18,7 @@ class BaseEnemy(ue.Character):
     
     DEFAULT_MAX_HP = 100.0
     DEATH_MONTAGE_PATH = "/Game/Characters/Mannequins/Anims/Death/MM_Death_Front_03_Montage.MM_Death_Front_03_Montage"
-    DISSOLVE_DURATION = 2.0  # 溶解动画时长（秒）
+    DISSOLVE_DURATION = 2.0  # 溶解动画时长（秒），Montage播放成功后会被覆盖为蒙太奇时长
     DISSOLVE_MAT_PATH = "/Game/Materials/Dissolve/M_Dissolve.M_Dissolve"
     
     def __init_pyobj__(self):
@@ -45,6 +45,7 @@ class BaseEnemy(ue.Character):
         # 溶解效果
         self._dissolve_mid = None     # 溶解材质MID
         self._dissolve_progress = 0.0 # 溶解进度 0→1
+        self._dissolve_duration = self.DISSOLVE_DURATION  # 实际溶解时长（秒）
     
     @ue.ufunction(override=True)
     def ReceiveBeginPlay(self):
@@ -123,7 +124,7 @@ class BaseEnemy(ue.Character):
             game_mode.on_enemy_killed()
 
         self.SetActorEnableCollision(False)
-        self._death_timer = 1.0  # 默认销毁时间，Montage播放成功后会覆盖
+        self._death_timer = 0.0  # 立即开始溶解，不再延迟到蒙太奇70%
         
         # 播放死亡音效 + 爆炸特效（通过玩家AudioManager）
         pc = ue.GameplayStatics.GetPlayerController(self, 0)
@@ -140,9 +141,9 @@ class BaseEnemy(ue.Character):
                 death_montage = ue.LoadObject(ue.AnimMontage, self.DEATH_MONTAGE_PATH)
                 if death_montage:
                     result = anim.Montage_Play(death_montage, 1.0)
-                    # 死亡动画播到70%时销毁，避开末尾blend-out过渡
-                    self._death_timer = result * 0.7
-                    ue.LogWarning(f"BaseEnemy: Montage_Play result={result}")
+                    # 溶解时长 = 蒙太奇时长，同步结束
+                    self._dissolve_duration = result if result > 0 else self.DISSOLVE_DURATION
+                    ue.LogWarning(f"BaseEnemy: Montage_Play result={result}, dissolve_duration={self._dissolve_duration:.2f}")
                 else:
                     ue.LogWarning(f"BaseEnemy: Death montage not found at {self.DEATH_MONTAGE_PATH}")
             
@@ -282,7 +283,7 @@ class BaseEnemy(ue.Character):
         if is_dead:
             self._death_timer -= delta_time
             if self._death_timer <= 0.0 and self._dissolve_mid:
-                self._dissolve_progress += delta_time / self.DISSOLVE_DURATION
+                self._dissolve_progress += delta_time / self._dissolve_duration
                 self._dissolve_mid.SetScalarParameterValue(
                     ue.Name("DissolveAmount"), self._dissolve_progress)
                 if self._dissolve_progress >= 1.0:
