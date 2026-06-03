@@ -50,6 +50,7 @@ class LoginPanel:
         try:
             self._widget.btn_login.OnClicked.Add(self._on_login_clicked)
             self._widget.btn_register.OnClicked.Add(self._on_register_clicked)
+            self._widget.btn_open_level4.OnClicked.Add(self._on_open_level4)
         except Exception as e:
             ue.LogWarning(f"LoginPanel: Delegate binding failed ({e}), falling back to polling")
 
@@ -86,6 +87,13 @@ class LoginPanel:
             return
 
         self._connect_and_action("Registering...", lambda nm: nm.register(account, password))
+
+    def _on_open_level4(self):
+        """快捷进入Level4"""
+        if self._destroyed:
+            return
+        self.destroy()
+        ue.GameplayStatics.OpenLevel(self._parent, "Level4")
 
     # ─── 网络连接 ───
 

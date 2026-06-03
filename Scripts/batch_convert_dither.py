@@ -11,7 +11,7 @@ import unreal
 import os
 
 # ============ 配置 ============
-SCAN_PATH = "/Game/LowerSector_Mod/Models"
+SCAN_PATH = "/Game/Cartoon_City_Free/Materials"
 MAPPING_OUTPUT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "docs", "dither_material_mapping.md"

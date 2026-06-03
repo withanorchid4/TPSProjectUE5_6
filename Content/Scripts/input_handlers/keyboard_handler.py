@@ -25,6 +25,7 @@ class KeyboardInputHandler(InputHandler):
         self._turn_rate = 0.0
         self._look_up_rate = 0.0
         self._is_firing = False
+        self._menu_open = False  # 画质菜单打开时抑制游戏输入
         
         # 玩家控制器
         self._pc = None
@@ -64,6 +65,7 @@ class KeyboardInputHandler(InputHandler):
         input_comp.BindAction("MagicArrow", ue.EInputEvent.IE_Pressed, self._on_magic_arrow)
         input_comp.BindAction("Reload", ue.EInputEvent.IE_Pressed, self._on_reload)
         input_comp.BindAction("SelfBuff", ue.EInputEvent.IE_Pressed, self._on_self_buff)
+        input_comp.BindAction("GraphicsMenu", ue.EInputEvent.IE_Pressed, self._on_graphics_menu)
         
         ue.LogWarning("KeyboardInputHandler: Input bindings complete!")
     
@@ -83,6 +85,10 @@ class KeyboardInputHandler(InputHandler):
         Args:
             delta_time: 帧间隔时间
         """
+        # 画质菜单打开时抑制游戏输入
+        if self._menu_open:
+            return
+
         # 应用移动
         if self.movement:
             if self._move_forward != 0.0:
@@ -185,6 +191,22 @@ class KeyboardInputHandler(InputHandler):
         """给自己添加增攻Buff"""
         if hasattr(self.owner, 'self_buff'):
             self.owner.self_buff()
+    
+    def _on_graphics_menu(self):
+        """切换画质设置菜单"""
+        import system.game_mode as gm
+        if gm._instance:
+            gm._instance.toggle_graphics_settings_in_game()
+
+    def set_menu_open(self, is_open: bool):
+        """设置画质菜单开关状态，打开时清零输入缓存"""
+        self._menu_open = is_open
+        if is_open:
+            self._move_forward = 0.0
+            self._move_right = 0.0
+            self._turn_rate = 0.0
+            self._look_up_rate = 0.0
+            self._is_firing = False
     
     # ─── 网络同步 ───
 

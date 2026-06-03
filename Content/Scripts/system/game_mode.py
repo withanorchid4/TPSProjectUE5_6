@@ -239,4 +239,40 @@ class TPSGameMode(ue.GameModeBase):
         self._main_menu_panel.set_graphics_settings_callback(self._on_show_graphics_settings)
         ue.LogWarning("TPSGameMode: Back to main menu")
 
+    def toggle_graphics_settings_in_game(self):
+        """游戏中按G键切换画质设置面板"""
+        if self._graphics_settings_panel:
+            # 面板已打开，关闭它
+            self._graphics_settings_panel.destroy()
+            self._graphics_settings_panel = None
+            self._set_game_input_enabled(True)
+        else:
+            # 面板未打开，显示它
+            pc = ue.GameplayStatics.GetPlayerController(self, 0)
+            if not pc:
+                ue.LogError("TPSGameMode: No PlayerController for in-game graphics settings!")
+                return
+            from ui.graphics_settings_ui import GraphicsSettingsPanel
+            self._graphics_settings_panel = GraphicsSettingsPanel(self, pc)
+            self._graphics_settings_panel.set_back_callback(self._on_in_game_graphics_back)
+            self._set_game_input_enabled(False)
+            ue.LogWarning("TPSGameMode: In-game graphics settings panel shown")
+
+    def _on_in_game_graphics_back(self):
+        """游戏中画质设置返回按钮回调"""
+        if self._graphics_settings_panel:
+            self._graphics_settings_panel.destroy()
+            self._graphics_settings_panel = None
+        self._set_game_input_enabled(True)
+
+    def _set_game_input_enabled(self, enabled: bool):
+        """切换游戏中输入状态（画质菜单开关时使用）"""
+        pc = ue.GameplayStatics.GetPlayerController(self, 0)
+        if pc:
+            pc.bShowMouseCursor = not enabled
+
+        char = ue.GameplayStatics.GetPlayerCharacter(self, 0)
+        if char and hasattr(char, 'input_handler') and char.input_handler:
+            char.input_handler.set_menu_open(not enabled)
+
 

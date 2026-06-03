@@ -313,17 +313,6 @@ class BaseEnemy(ue.Character):
         self._diag_t -= delta_time
         if self._diag_t <= 0:
             self._diag_t = 2.0
-            movement = self.CharacterMovement
-            vel = movement.Velocity if movement else None
-            speed = ue.KismetMathLibrary.VSize(vel) if vel else 0
-            controller = self.GetController()
-            ctrl_type = type(controller).__name__ if controller else "None"
-            orient = movement.bOrientRotationToMovement if movement else "?"
-            max_spd = movement.MaxWalkSpeed if movement else "?"
-            ai_state = self.ai.state.value if self.ai else "?"
-            loc = self.GetActorLocation()
-            ue.Log(f"[Enemy DIAG] id={self.enemy_id} state={ai_state} ctrl={ctrl_type} pos=({loc.X:.0f},{loc.Y:.0f},{loc.Z:.0f}) speed={speed:.1f}/{max_spd} orient={orient}")
-        
         # 更新AI
         if self.ai:
             self.ai.tick(delta_time)

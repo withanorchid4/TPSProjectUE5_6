@@ -3,7 +3,7 @@
 > 项目：网易2026初入江湖培训作业 — 第三人称射击游戏 Demo  
 > 引擎：Unreal Engine 5.6 + NePy（Python 绑定插件）  
 > 脚本：Python 3.12（游戏逻辑）+ 蓝图（动画/材质/Widget）  
-> 项目自身代码：约 12,000 行 Python（客户端 9,800 + 服务端 2,100）
+> 入口关卡：MainMenu
 
 ---
 
@@ -16,6 +16,8 @@
 3. 在 UE 编辑器中点击 Play，进入主菜单
 4. 在登录界面输入账号密码（预置账号：`netease1`/`netease2`/`netease3`，密码均为 `123`），点击登录；也可注册新账号
 5. 选择或创建角色后点击"开始游戏"，进入 Level1
+
+**多机联机**：默认连接地址为 `127.0.0.1`（本机），如需多机联机，非主机客户端需修改 `Content/Scripts/network/network_manager.py` 中 `DEFAULT_HOST = "127.0.0.1"` 为服务端的实际 IP 地址。
 
 ### 按键操作
 
@@ -33,11 +35,12 @@
 | **R** | 手动换弹 | 2秒换弹动画，弹药打空时自动触发 |
 | **Q** | 发射魔法箭 | 飞行轨迹 + 命中范围晕眩3秒，10秒CD |
 | **F** | 自我增益Buff | 增加攻击力 +0.3/层，持续10秒 |
+| **G** | 画质设置 | 游戏中弹出画质面板，释放鼠标，再按G或点返回关闭 |
 
 ### 游戏流程
 
-1. **Level1**：5个敌人（近战+远程混编），消灭所有敌人后自动进入 Level2
-2. **Level2**：8个敌人（更多远程敌人），消灭后显示胜利结算界面
+1. **Level1**：4个敌人（近战+远程混编），消灭所有敌人后自动进入 Level2
+2. **Level2**：4个敌人（更多远程敌人），消灭后显示胜利结算界面
 3. 玩家死亡则显示失败界面，可选择重试或返回主菜单
 
 ### HUD 信息
@@ -61,7 +64,7 @@
 
 ---
 
-## 第二部分：作业要求逐一回复
+## 第二部分：作业内容
 
 以下按 P5 中"客户端基础要求"的18条逐一说明实现方式，然后是服务端要求、材质与渲染、性能分析等。
 
@@ -69,9 +72,7 @@
 
 ### 基础要求1：搭建一个简单的3D场景，供玩家游戏
 
-**实现**：使用 Marketplace 免费 LowerSector_Mod 城市建筑资源包搭建关卡场景，包含建筑、围墙、人行道、电缆、卷帘门、天塔等多种建筑元素。场景光照使用 Lightmass 烘焙静态光照（Static Mobility），动态角色使用 Lumen GI 和反射。关卡中还放置了 DirectionalLight（主光源，Stationary，带级联阴影映射）、SkyLight（天光）、ExponentialHeightFog（高度雾）和 PostProcessVolume（后处理，含泛红受伤效果）。
-
-共 3 个游戏关卡：MainMenu（主菜单）、Level1（5敌人）、Level2（8敌人），加两个结算展示关卡 ResultVictory 和 ResultDefeat。Level1 和 Level2 的场景布局和敌人配置不同，Level2 远程敌人比例更高、总数更多。
+共 3 个游戏关卡：MainMenu（主菜单）、Level1（5敌人）、Level2（8敌人）。
 
 ---
 
@@ -89,9 +90,8 @@
 
 摄像机挂在 SpringArmComponent 上，位于角色右后上方（TargetArmLength=300, SocketOffset Y=50 右偏/越肩, Z=100 上偏），启用 CameraLag（速度6.0）产生平滑跟随感。SpringArm 的 `bUsePawnControlRotation=True`，摄像机跟随 Controller 旋转。
 
-**瞄准模式（ADS）**：右键按住时，TargetArmLength 从300缩小到50（摄像机贴近角色），SocketOffset Y从50→30/Z从100→80（更居中），角色自动转向摄像机 Yaw 方向（解决角色朝向和摄像机朝向不一致时子弹从枪口往摄像机方向飞导致视觉不自然的问题），移动速度降至300（瞄准移速惩罚）。
+**瞄准模式（ADS）**：右键按住时，TargetArmLength 从300缩小到50（摄像机贴近角色），SocketOffset Y从50→30/Z从100→80（更居中），角色自动转向摄像机 Yaw 方向，移动速度降至300（瞄准移速惩罚）。
 
-**俯仰角限制**：在输入层直接 Clamp Controller 的 ControlRotation Pitch 到 [-80°, +80°]。不使用 PlayerCameraManager 的 ViewPitchMin/Max 是因为实测发现在 SpringArm + CameraLag 组合下该限制不可靠——设置 ViewPitchMin=-89 后仰头会超过垂直面30°看到角色后背。改为在 `CameraComponent.update_rotation()` 中每次 AddControllerPitchInput 后读取并修正 ControlRotation，从源头限制更可控。留10°余量（±80°而非±90°）避免浮点精度导致的万向锁翻转。
 
 ---
 
@@ -135,7 +135,7 @@
 
 换弹触发方式：R键手动换弹，或弹药打空时自动触发（`can_shoot()` 中 current_ammo<=0 且 total_ammo>0 时自动调用 `start_reload()`）。
 
-换弹动画：推送 `bIsReloading=True` 脉冲到 AnimBP，AnimBP 中触发换弹 Montage。使用"延迟一帧还原"机制——帧1设 True，帧2检测到 `_pending_reload_reset` 后还原为 False。因为 AnimBP 在 Python 赋值后下一帧才读取变量，如果在同一帧内设 True 再设 False，AnimBP 就读不到 True。
+换弹动画：推送 `bIsReloading=True` 脉冲到 AnimBP，AnimBP 中触发换弹 Montage。使用"延迟一帧还原"机制——帧1设 True，帧2检测到 `_pending_reload_reset` 后还原为 False。
 
 ---
 
@@ -147,9 +147,9 @@
 
 ### 基础要求8：加入关卡设计，支持两类关卡，能够顺利切换关卡到下一关
 
-**实现**：`TPSGameMode` 管理3个关卡：MainMenu（主菜单+登录）、Level1（4敌人）、Level2（4敌人）。GameMode 在 `ReceiveBeginPlay` 中通过关卡名判断当前关卡编号（"Level1"→1, "Level2"→2），并调用 `GetAllActorsOfClass(BaseEnemy)` 统计场景中的敌人数量。
+**实现**：`TPSGameMode` 管理3个关卡：MainMenu（主菜单+登录）、Level3（4敌人）、Level4（4敌人）。GameMode 在 `ReceiveBeginPlay` 中通过关卡名判断当前关卡编号（"Level3"→1, "Level4"→2），并调用 `GetAllActorsOfClass(BaseEnemy)` 统计场景中的敌人数量。
 
-敌人死亡时 `GameMode.on_enemy_killed()` 递减计数，当 `alive_enemies` 降为0时触发胜利：Level1 胜利后调用 `ue.GameplayStatics.OpenLevel("Level2")` 切换关卡，Level2 胜利后显示胜利结算 Widget。玩家死亡则显示失败结算 Widget。
+敌人死亡时 `GameMode.on_enemy_killed()` 递减计数，当 `alive_enemies` 降为0时触发胜利：Level3 胜利后调用 `ue.GameplayStatics.OpenLevel("Level2")` 切换关卡，Level4 胜利后显示胜利结算 Widget。玩家死亡则显示失败结算 Widget。
 
 结算界面（`WBP_GameResult`）在玩家 Tick 中创建（使用 `_pending_result_widget` 标记延迟一帧）结算界面显示胜利/失败，可重试或返回主菜单。
 
@@ -272,13 +272,13 @@
 
 **可观察差异**：Low 关闭动态阴影和 Lumen GI/反射，纹理模糊（MipBias=1，Pool=400MB），植被最疏；High 开启4级 CSM + VSM + Lumen 全功能，纹理最清晰（MipBias=0，Pool=800MB），植被密集。静态场景因使用 Lightmass 烘焙光照，不受 Scalability 影响——Low 和 High 的差异主要体现在动态物体（角色、敌人）和阴影上。
 
-入口为主菜单"画质设置"按钮 → `WBP_GraphicsSettings` Widget → Low/Med/High 三按钮。
+入口为主菜单"画质设置"按钮 → `WBP_GraphicsSettings` Widget → Low/Med/High 三按钮。游戏中也可按 G 键弹出画质面板，释放鼠标并暂停角色输入，再按 G 或点击返回关闭面板恢复游戏。
 
 ---
 
 ### 基础要求16：灵活应用UE的材质系统，编写特殊的材质效果
 
-**实现**：使用材质共完成了下面几种种自定义材质效果：
+**实现**：使用材质系统编写了下面几种材质效果：
 
 1. **M_Dissolve（溶解材质）**：敌人死亡时替换所有材质 slot 为溶解 MID。`DissolveAmount` 从0到1渐变2秒，边缘有发光 Emissive 效果，随溶解进度从脚到头逐渐消失。
 
@@ -292,7 +292,7 @@
 
 **实现**：
 
-- **光照**：使用 Lightmass 烘焙静态间接光照，出于烘焙时间考虑，并未为每个静态网格分配合适的lightmap resolution。
+- **光照**：使用 Lightmass 烘焙静态间接光照。
 - **Megalights**：在第二个关卡中，灯光较多，使用Megalights来支持多光源直接光照和阴影。
 - **后处理**：PostProcessVolume 中挂载受伤泛红材质（M_damageOverlay），使用 Bloom 等标准后处理效果。
 
@@ -303,9 +303,9 @@
 **实现**：在开发过程中使用 `stat fps` 和 `stat unit` 控制台命令监控帧率和各线程耗时，使用 Unreal Insights 对 CPU 各线程、GPU 和内存进行简单分析。
 
 主要关注点：
-- 在使用lumen时，运行时性能瓶颈在GPU端，每帧的GPU时间大约为15ms，关闭lumen换用光照烘焙之后GPU时间大约为9ms，其中3.8ms在处理megalights
-- AI 状态机 `GetAllActorsOfClass` 每帧查找玩家有一定开销，但敌人数量有限（最多8个）影响不大
 - `stat unit` 观察 Game/Draw/RHI/GPU 各线程时间，确保帧率在60fps以上
+- 在使用lumen时，运行时性能瓶颈在GPU端，每帧的GPU时间大约为15ms，关闭lumen换用光照烘焙之后GPU时间大约为9ms，其中3.8ms在处理megalights
+
 
 ---
 
@@ -382,15 +382,21 @@
 
 **动作同步**：换弹/瞄准通过 `CsAction` 同步，非主机在远程玩家的 AnimBP 上设置 `bIsReloading`/`bIsAiming`。
 
+**道具拾取同步**：拾取时通过 `CsPickup{item_uid}` 发送服务端广播 `ScPickupResult`，非发起者客户端收到后按 `item_uid` 查找并销毁本地对应道具，防止不同步导致同一道具被多人重复拾取。
+
 ---
 
 ### AI部分
+
+#### AI使用技巧
+
+AI 编写代码时经常虚构不存在的 API，因此在生成代码后必须查阅相关文档确认 API 确实存在后再使用。
 
 #### 使用AI提高开发效率的实例
 
 ##### 实例1：AI辅助批量生成Dither材质资产
 
-在实现 Dither 遮挡效果时，场景中使用了 LowerSector_Mod 资源包的30多种不同材质。如果手动为每种材质创建 Dither 版本（修改 Blend Mode、添加 FadeOpacity 参数、连接 DitherTemporalAA 函数到 Opacity Mask），每个材质需要约5-10分钟的重复操作，30多个材质至少需要3-4小时。
+在实现 Dither 遮挡效果时，两个场景中使用了资源包的30多种不同材质。如果手动为每种材质创建 Dither 版本比较繁琐。
 
 使用 AI 生成了一个编辑器批处理脚本 `Scripts/batch_convert_dither.py`，该脚本在 UE 编辑器中通过 Python 命令执行，自动完成以下流程：
 

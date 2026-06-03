@@ -49,6 +49,7 @@ class InputConfig:
         {"ActionName": "MagicArrow", "Key": "Q"},
         {"ActionName": "Reload", "Key": "R"},
         {"ActionName": "SelfBuff", "Key": "F"},
+        {"ActionName": "GraphicsMenu", "Key": "G"},
     ]
     
     @classmethod

@@ -4,7 +4,7 @@ import ue
 
 # orig材质路径 → dither材质路径 的配置映射（扩充只需加条目）
 DITHER_MAT_MAP = {
-    "/Game/Cartoon_City_Free/Materials/M_Color": "/Game/Materials/Dither/M_Color",
+    # "/Game/Cartoon_City_Free/Materials/M_Color": "/Game/Materials/Dither/M_Color",
     "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower": "/Game/LowerSector_Mod/Models/SkyTower/Materials/M_SkyTower_Dither",
     "/Game/LowerSector_Mod/Models/Apartment01/Materials/M_Apartment01": "/Game/LowerSector_Mod/Models/Apartment01/Materials/M_Apartment01_Dither",
     "/Game/LowerSector_Mod/Models/BG_Buildings/Materials/M_BG_Building01": "/Game/LowerSector_Mod/Models/BG_Buildings/Materials/M_BG_Building01_Dither",
@@ -36,7 +36,23 @@ DITHER_MAT_MAP = {
     "/Game/LowerSector_Mod/Models/Tower8x/Materials/M_Tower8x": "/Game/LowerSector_Mod/Models/Tower8x/Materials/M_Tower8x_Dither",
     "/Game/LowerSector_Mod/Models/Wall01/Materials/M_Wall01": "/Game/LowerSector_Mod/Models/Wall01/Materials/M_Wall01_Dither",
     "/Game/LowerSector_Mod/Models/Wall6x/Materials/M_Wall6x": "/Game/LowerSector_Mod/Models/Wall6x/Materials/M_Wall6x_Dither",
-    "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop": "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop_Dither"
+    "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop": "/Game/LowerSector_Mod/Models/Workshop/Materials/M_Workshop_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Asphalt_Dark_Gray": "/Game/Cartoon_City_Free/Materials/M_Asphalt_Dark_Gray_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Billboard": "/Game/Cartoon_City_Free/Materials/M_Billboard_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Car_Color": "/Game/Cartoon_City_Free/Materials/M_Car_Color_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Car_Headlights": "/Game/Cartoon_City_Free/Materials/M_Car_Headlights_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Car_Taillights": "/Game/Cartoon_City_Free/Materials/M_Car_Taillights_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Color": "/Game/Cartoon_City_Free/Materials/M_Color_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Color_Glossy": "/Game/Cartoon_City_Free/Materials/M_Color_Glossy_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Emissive": "/Game/Cartoon_City_Free/Materials/M_Emissive_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Glass": "/Game/Cartoon_City_Free/Materials/M_Glass_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Graffiti": "/Game/Cartoon_City_Free/Materials/M_Graffiti_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Grass": "/Game/Cartoon_City_Free/Materials/M_Grass_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Metal": "/Game/Cartoon_City_Free/Materials/M_Metal_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Road_Signs": "/Game/Cartoon_City_Free/Materials/M_Road_Signs_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Roads": "/Game/Cartoon_City_Free/Materials/M_Roads_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Scrolling_Text": "/Game/Cartoon_City_Free/Materials/M_Scrolling_Text_Dither",
+    "/Game/Cartoon_City_Free/Materials/M_Tile_1": "/Game/Cartoon_City_Free/Materials/M_Tile_1_Dither"
 }
 
 
